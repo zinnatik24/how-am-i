@@ -6,6 +6,7 @@ import {
   UserProfile,
   PartnerProfile,
   CloudCheckin,
+  PartnerReaction,
   getStoredUser,
   getStoredToken,
   removeStoredToken,
@@ -15,6 +16,7 @@ import {
   registerPushToken,
   connectPartnerApi,
   fetchPartnerFeed,
+  fetchIncomingReactions,
   sendPartnerPingApi,
   sendPartnerReactionApi,
 } from '../services/api';
@@ -48,6 +50,7 @@ interface AuthContextType {
   token: string | null;
   partners: PartnerProfile[];
   partnerFeed: CloudCheckin[];
+  incomingReactions: PartnerReaction[];
   isLoading: boolean;
   isAuthenticated: boolean;
   pushToken: string | null;
@@ -69,6 +72,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [token, setToken] = useState<string | null>(null);
   const [partners, setPartners] = useState<PartnerProfile[]>([]);
   const [partnerFeed, setPartnerFeed] = useState<CloudCheckin[]>([]);
+  const [incomingReactions, setIncomingReactions] = useState<PartnerReaction[]>([]);
   const [pushToken, setPushToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [pendingInvite, setPendingInvite] = useState<PendingInvite | null>(null);
@@ -176,12 +180,25 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const refreshFeed = async () => {
     if (!token) return;
     try {
-      const feed = await fetchPartnerFeed();
+      const [feed, reactions] = await Promise.all([
+        fetchPartnerFeed().catch(() => []),
+        fetchIncomingReactions().catch(() => []),
+      ]);
       setPartnerFeed(feed);
+      setIncomingReactions(reactions);
     } catch (e) {
       console.warn('[AUTH] Could not refresh partner feed:', e);
     }
   };
+
+  // Auto-poll partner updates & incoming care reactions every 6 seconds
+  useEffect(() => {
+    if (!token || !user) return;
+    const timer = setInterval(() => {
+      refreshFeed();
+    }, 6000);
+    return () => clearInterval(timer);
+  }, [token, user]);
 
   // Google Sign-In Flow
   const signInWithGoogle = async () => {
@@ -312,6 +329,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         token,
         partners,
         partnerFeed,
+        incomingReactions,
         isLoading,
         isAuthenticated: !!user,
         pushToken,

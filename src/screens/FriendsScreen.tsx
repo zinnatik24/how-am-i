@@ -31,6 +31,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
     isAuthenticated,
     partners,
     partnerFeed,
+    incomingReactions,
     pendingInvite,
     clearPendingInvite,
     signInWithGoogle,
@@ -423,6 +424,63 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
       {/* 5. STATE C: AUTHENTICATED WITH PARTNER (LIVE PARTNER PULSE HERO) */}
       {isAuthenticated && primaryPartner && (
         <>
+          {/* INCOMING CARE REACTION FROM PARTNER (Interactive Card) */}
+          {incomingReactions && incomingReactions.length > 0 && (
+            <View style={styles.incomingReactionCard}>
+              <View style={styles.incomingReactionRow}>
+                <View style={styles.incomingReactionIconCircle}>
+                  <Text style={{ fontSize: 24 }}>
+                    {incomingReactions[0].reaction_type === 'ping'
+                      ? '💭'
+                      : incomingReactions[0].reaction_type === 'hug'
+                      ? '🤗'
+                      : incomingReactions[0].reaction_type === 'proud'
+                      ? '🌟'
+                      : incomingReactions[0].reaction_type === 'talk'
+                      ? '☕'
+                      : '🤍'}
+                  </Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <View style={styles.incomingReactionHeaderRow}>
+                    <Text style={styles.incomingReactionSender}>
+                      {incomingReactions[0].from_name || primaryPartner.name}
+                    </Text>
+                    <Text style={styles.incomingReactionTime}>
+                      {formatTimeAgo(incomingReactions[0].created_at)}
+                    </Text>
+                  </View>
+                  <Text style={styles.incomingReactionText}>
+                    {incomingReactions[0].reaction_label}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.incomingReactionActionsRow}>
+                {incomingReactions[0].reaction_type === 'ping' && onOpenCheckIn ? (
+                  <TouchableOpacity
+                    style={styles.incomingReactionActionBtn}
+                    onPress={() => {
+                      triggerHaptic('medium');
+                      onOpenCheckIn();
+                    }}
+                  >
+                    <Text style={styles.incomingReactionActionBtnText}>✍️ Ответить чекином</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.incomingReactionActionBtn}
+                    onPress={() =>
+                      handleSendCareReaction(primaryPartner.id, 'hug', '🤗 Теплые объятия для тебя!')
+                    }
+                  >
+                    <Text style={styles.incomingReactionActionBtnText}>🤗 Обнять в ответ</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          )}
+
           {/* A. Hero: Live Partner Status Card */}
           <View style={[styles.pulseCard, { borderColor: `${partnerColor}44` }]}>
             <View style={styles.pulseHeader}>
@@ -807,6 +865,69 @@ const styles = StyleSheet.create({
     color: '#E2E8F0',
     fontSize: 13,
     fontWeight: '500',
+  },
+
+  // Incoming Care Reaction Card
+  incomingReactionCard: {
+    backgroundColor: 'rgba(237, 100, 166, 0.1)',
+    borderRadius: 24,
+    padding: 16,
+    borderWidth: 1.5,
+    borderColor: 'rgba(237, 100, 166, 0.35)',
+    marginBottom: 16,
+  },
+  incomingReactionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 10,
+  },
+  incomingReactionIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(237, 100, 166, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(237, 100, 166, 0.4)',
+  },
+  incomingReactionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  incomingReactionSender: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  incomingReactionTime: {
+    fontSize: 12,
+    color: '#A0AEC0',
+  },
+  incomingReactionText: {
+    fontSize: 14,
+    color: '#ED64A6',
+    fontWeight: '600',
+  },
+  incomingReactionActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  incomingReactionActionBtn: {
+    backgroundColor: 'rgba(237, 100, 166, 0.25)',
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(237, 100, 166, 0.5)',
+  },
+  incomingReactionActionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
 
   // 2. Incoming Invite Banner

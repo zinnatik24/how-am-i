@@ -44,6 +44,17 @@ export interface CloudCheckin {
   user_avatar?: string;
 }
 
+export interface PartnerReaction {
+  id: string;
+  from_user_id: string;
+  to_user_id: string;
+  reaction_type: string;
+  reaction_label: string;
+  created_at: string;
+  from_name?: string;
+  from_avatar?: string;
+}
+
 // Token Storage
 export async function getStoredToken(): Promise<string | null> {
   return AsyncStorage.getItem(TOKEN_KEY);
@@ -206,5 +217,12 @@ export async function sendPartnerReactionApi(
   return apiFetch('/api/partner/reaction', {
     method: 'POST',
     body: JSON.stringify({ partnerId, reactionType, reactionLabel }),
+  });
+}
+
+// 10. Fetch Incoming Reactions & Pings Received from Partner
+export async function fetchIncomingReactions(): Promise<PartnerReaction[]> {
+  return apiFetch<PartnerReaction[]>('/api/partner/reactions', {
+    method: 'GET',
   });
 }

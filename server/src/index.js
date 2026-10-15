@@ -434,6 +434,14 @@ app.post('/api/partner/ping', authMiddleware, async (req, res) => {
     }
 
     const partner = targetPartner.rows[0];
+
+    // Save ping to partner_reactions so partner sees it in app
+    await query(
+      `INSERT INTO partner_reactions (from_user_id, to_user_id, reaction_type, reaction_label)
+       VALUES ($1, $2, $3, $4)`,
+      [req.user.userId, partner.id, 'ping', '💭 Интересуется: «Как ты?»']
+    );
+
     if (partner.push_token) {
       sendExpoPushNotification(
         partner.push_token,
@@ -499,6 +507,25 @@ app.post('/api/partner/reaction', authMiddleware, async (req, res) => {
     res.json({ success: true, message: 'Реакция отправлена!' });
   } catch (err) {
     console.error('[REACTION] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 11. Get Incoming Care Reactions & Pings Received by Current User
+app.get('/api/partner/reactions', authMiddleware, async (req, res) => {
+  try {
+    const reactions = await query(
+      `SELECT r.*, u.name as from_name, u.avatar_url as from_avatar
+       FROM partner_reactions r
+       JOIN users u ON u.id = r.from_user_id
+       WHERE r.to_user_id = $1
+       ORDER BY r.created_at DESC
+       LIMIT 10`,
+      [req.user.userId]
+    );
+    res.json(reactions.rows);
+  } catch (err) {
+    console.error('[REACTIONS GET] Error:', err);
     res.status(500).json({ error: err.message });
   }
 });
