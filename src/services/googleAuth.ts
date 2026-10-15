@@ -3,8 +3,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const GOOGLE_CLIENT_ID_STORAGE_KEY = '@howami_google_client_id';
 
-// Default Client ID if hardcoded (can also be entered or set via env)
-export const DEFAULT_GOOGLE_CLIENT_ID = '';
+// Default Client ID from Google Cloud Console
+export const DEFAULT_GOOGLE_CLIENT_ID =
+  '363382599468-fol7ilnfdtcjpurkda5h1hmugmn0val8.apps.googleusercontent.com';
 
 export async function getGoogleClientId(): Promise<string> {
   if (DEFAULT_GOOGLE_CLIENT_ID) return DEFAULT_GOOGLE_CLIENT_ID;
