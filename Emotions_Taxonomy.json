@@ -1,0 +1,258 @@
+{
+  "quadrants": [
+    {
+      "id": "high_unpleasant",
+      "name_key": "quadrant.high_unpleasant",
+      "color_hex": "#F2545B",
+      "energy": "high",
+      "pleasantness": "unpleasant",
+      "translations": {
+        "en": "High Energy, Unpleasant",
+        "ru": "Высокая энергия, неприятно"
+      }
+    },
+    {
+      "id": "high_pleasant",
+      "name_key": "quadrant.high_pleasant",
+      "color_hex": "#F9C74F",
+      "energy": "high",
+      "pleasantness": "pleasant",
+      "translations": {
+        "en": "High Energy, Pleasant",
+        "ru": "Высокая энергия, приятно"
+      }
+    },
+    {
+      "id": "low_unpleasant",
+      "name_key": "quadrant.low_unpleasant",
+      "color_hex": "#577590",
+      "energy": "low",
+      "pleasantness": "unpleasant",
+      "translations": {
+        "en": "Low Energy, Unpleasant",
+        "ru": "Низкая энергия, неприятно"
+      }
+    },
+    {
+      "id": "low_pleasant",
+      "name_key": "quadrant.low_pleasant",
+      "color_hex": "#43AA8B",
+      "energy": "low",
+      "pleasantness": "pleasant",
+      "translations": {
+        "en": "Low Energy, Pleasant",
+        "ru": "Низкая энергия, приятно"
+      }
+    }
+  ],
+  "emotions": [
+    {
+      "id": "angry",
+      "quadrant": "high_unpleasant",
+      "intensity": 3,
+      "en": {
+        "name": "Angry",
+        "definition": "A strong feeling of intense displeasure, hostility, or antagonism."
+      },
+      "ru": {
+        "name": "Злость",
+        "definition": "Сильное чувство острого раздражения, негодования или враждебности."
+      }
+    },
+    {
+      "id": "anxious",
+      "quadrant": "high_unpleasant",
+      "intensity": 2,
+      "en": {
+        "name": "Anxious",
+        "definition": "Experiencing worry, unease, or nervousness about an uncertain outcome."
+      },
+      "ru": {
+        "name": "Тревога",
+        "definition": "Ощущение беспокойства, нервозности и страха перед неизвестностью."
+      }
+    },
+    {
+      "id": "frustrated",
+      "quadrant": "high_unpleasant",
+      "intensity": 2,
+      "en": {
+        "name": "Frustrated",
+        "definition": "Feeling upset or annoyed as a result of being unable to achieve something."
+      },
+      "ru": {
+        "name": "Фрустрация",
+        "definition": "Чувство досады и раздражения из-за препятствий на пути к цели."
+      }
+    },
+    {
+      "id": "stressed",
+      "quadrant": "high_unpleasant",
+      "intensity": 2,
+      "en": {
+        "name": "Stressed",
+        "definition": "Feeling overwhelmed by mental or emotional pressure and strain."
+      },
+      "ru": {
+        "name": "Стресс",
+        "definition": "Состояние перегруженности из-за эмоционального или умственного давления."
+      }
+    },
+    {
+      "id": "joyful",
+      "quadrant": "high_pleasant",
+      "intensity": 3,
+      "en": {
+        "name": "Joyful",
+        "definition": "Feeling great pleasure, happiness, and delight."
+      },
+      "ru": {
+        "name": "Радость",
+        "definition": "Чувство большого удовольствия, счастья и восторга."
+      }
+    },
+    {
+      "id": "excited",
+      "quadrant": "high_pleasant",
+      "intensity": 3,
+      "en": {
+        "name": "Excited",
+        "definition": "Very enthusiastic, eager, and full of lively anticipation."
+      },
+      "ru": {
+        "name": "Восторг",
+        "definition": "Энергичный подъем, нетерпеливое предвкушение и эйфория."
+      }
+    },
+    {
+      "id": "inspired",
+      "quadrant": "high_pleasant",
+      "intensity": 2,
+      "en": {
+        "name": "Inspired",
+        "definition": "Filled with the urge or ability to do or feel something creative."
+      },
+      "ru": {
+        "name": "Вдохновение",
+        "definition": "Творческий подъем и сильное желание созидать или действовать."
+      }
+    },
+    {
+      "id": "confident",
+      "quadrant": "high_pleasant",
+      "intensity": 2,
+      "en": {
+        "name": "Confident",
+        "definition": "Feeling self-assured and trusting in one's own abilities."
+      },
+      "ru": {
+        "name": "Уверенность",
+        "definition": "Твердая вера в свои силы, возможности и решения."
+      }
+    },
+    {
+      "id": "sad",
+      "quadrant": "low_unpleasant",
+      "intensity": 2,
+      "en": {
+        "name": "Sad",
+        "definition": "Feeling sorrow, unhappiness, or grief."
+      },
+      "ru": {
+        "name": "Грусть",
+        "definition": "Ощущение печали, подавленности и душевной боли."
+      }
+    },
+    {
+      "id": "exhausted",
+      "quadrant": "low_unpleasant",
+      "intensity": 3,
+      "en": {
+        "name": "Exhausted",
+        "definition": "Completely drained of physical or mental energy."
+      },
+      "ru": {
+        "name": "Истощение",
+        "definition": "Полный упадок физических, эмоциональных и ментальных сил."
+      }
+    },
+    {
+      "id": "lonely",
+      "quadrant": "low_unpleasant",
+      "intensity": 2,
+      "en": {
+        "name": "Lonely",
+        "definition": "Sad because one has no friends or company."
+      },
+      "ru": {
+        "name": "Одиночество",
+        "definition": "Тягостное чувство изоляции и нехватки душевной близости."
+      }
+    },
+    {
+      "id": "bored",
+      "quadrant": "low_unpleasant",
+      "intensity": 1,
+      "en": {
+        "name": "Bored",
+        "definition": "Feeling weary and restless through lack of interest."
+      },
+      "ru": {
+        "name": "Скука",
+        "definition": "Тягостное состояние из-за отсутствия интереса или занятия."
+      }
+    },
+    {
+      "id": "calm",
+      "quadrant": "low_pleasant",
+      "intensity": 1,
+      "en": {
+        "name": "Calm",
+        "definition": "Peaceful, quiet, and free from agitation or excitement."
+      },
+      "ru": {
+        "name": "Спокойствие",
+        "definition": "Мирное, уравновешенное состояние без тревоги и суеты."
+      }
+    },
+    {
+      "id": "grateful",
+      "quadrant": "low_pleasant",
+      "intensity": 2,
+      "en": {
+        "name": "Grateful",
+        "definition": "Feeling warmth, appreciation, and thankfulness."
+      },
+      "ru": {
+        "name": "Благодарность",
+        "definition": "Теплое чувство признательности за добро, заботу или момент."
+      }
+    },
+    {
+      "id": "serene",
+      "quadrant": "low_pleasant",
+      "intensity": 2,
+      "en": {
+        "name": "Serene",
+        "definition": "Untroubled, tranquil, and clear-minded."
+      },
+      "ru": {
+        "name": "Умиротворение",
+        "definition": "Глубокая гармония, безмятежность и ясность ума."
+      }
+    },
+    {
+      "id": "content",
+      "quadrant": "low_pleasant",
+      "intensity": 1,
+      "en": {
+        "name": "Content",
+        "definition": "A state of peaceful happiness and satisfaction."
+      },
+      "ru": {
+        "name": "Довольство",
+        "definition": "Тихое удовлетворение текущим моментом и своей жизнью."
+      }
+    }
+  ]
+}
