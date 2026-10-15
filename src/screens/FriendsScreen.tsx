@@ -734,6 +734,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 48,
+    maxWidth: 520,
+    width: '100%',
+    alignSelf: 'center',
   },
 
   // 1. Header
