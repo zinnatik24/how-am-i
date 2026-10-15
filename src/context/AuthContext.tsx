@@ -15,6 +15,8 @@ import {
   registerPushToken,
   connectPartnerApi,
   fetchPartnerFeed,
+  sendPartnerPingApi,
+  sendPartnerReactionApi,
 } from '../services/api';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -30,6 +32,11 @@ Notifications.setNotificationHandler({
   }),
 });
 
+export interface PendingInvite {
+  code: string;
+  fromName?: string;
+}
+
 interface AuthContextType {
   user: UserProfile | null;
   token: string | null;
@@ -38,11 +45,15 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   pushToken: string | null;
+  pendingInvite: PendingInvite | null;
+  clearPendingInvite: () => void;
   signInWithGoogle: () => Promise<void>;
   signInDemo: (name: string, email: string) => Promise<void>;
   signOut: () => Promise<void>;
   connectPartner: (inviteCode: string) => Promise<{ success: boolean; partner?: PartnerProfile; error?: string }>;
   refreshFeed: () => Promise<void>;
+  sendCarePing: (partnerId?: string) => Promise<{ success: boolean; message: string }>;
+  sendCareReaction: (partnerId: string, reactionType: string, reactionLabel: string) => Promise<{ success: boolean; message: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -54,6 +65,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [partnerFeed, setPartnerFeed] = useState<CloudCheckin[]>([]);
   const [pushToken, setPushToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [pendingInvite, setPendingInvite] = useState<PendingInvite | null>(null);
 
   // Initialize Auth state on mount
   useEffect(() => {
@@ -175,6 +187,28 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  // Check for invite code in web URL (?invite=CODE&from=NAME)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.location?.search) {
+      const params = new URLSearchParams(window.location.search);
+      const invite = params.get('invite');
+      const from = params.get('from');
+      if (invite) {
+        setPendingInvite({
+          code: invite.trim().toUpperCase(),
+          fromName: from ? decodeURIComponent(from) : undefined,
+        });
+      }
+    }
+  }, []);
+
+  const clearPendingInvite = () => {
+    setPendingInvite(null);
+    if (typeof window !== 'undefined' && window.history?.replaceState) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  };
+
   // Connect Partner with 6-char code
   const connectPartner = async (inviteCode: string) => {
     if (!inviteCode.trim()) {
@@ -187,12 +221,31 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const exists = prev.some((p) => p.id === res.partner.id);
           return exists ? prev : [...prev, res.partner];
         });
+        clearPendingInvite();
         await refreshFeed();
         return { success: true, partner: res.partner };
       }
       return { success: false, error: 'Не удалось подключить' };
     } catch (err: any) {
       return { success: false, error: err.message || 'Ошибка подключения' };
+    }
+  };
+
+  const sendCarePing = async (partnerId?: string) => {
+    try {
+      const res = await sendPartnerPingApi(partnerId);
+      return res;
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Ошибка отправки' };
+    }
+  };
+
+  const sendCareReaction = async (partnerId: string, reactionType: string, reactionLabel: string) => {
+    try {
+      const res = await sendPartnerReactionApi(partnerId, reactionType, reactionLabel);
+      return res;
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Ошибка отправки' };
     }
   };
 
@@ -214,11 +267,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         isLoading,
         isAuthenticated: !!user,
         pushToken,
+        pendingInvite,
+        clearPendingInvite,
         signInWithGoogle,
         signInDemo,
         signOut,
         connectPartner,
         refreshFeed,
+        sendCarePing,
+        sendCareReaction,
       }}
     >
       {children}

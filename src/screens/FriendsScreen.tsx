@@ -15,6 +15,7 @@ import { FriendRecord, CheckInRecord } from '../types';
 import { QUADRANTS } from '../data/emotionsData';
 import { useLanguage } from '../i18n/LanguageContext';
 import { useAuth } from '../context/AuthContext';
+import { API_BASE_URL } from '../services/api';
 import { getFriends, addFriend, deleteFriend, recordFriendReaction } from '../storage/friendsStorage';
 import { shareCheckIn } from '../utils/shareHelper';
 import { getLocalizedEmotionName } from '../utils/localizationHelper';
@@ -31,12 +32,15 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn }) =
     isAuthenticated,
     partners,
     partnerFeed,
+    pendingInvite,
+    clearPendingInvite,
     signInWithGoogle,
     signInDemo,
     signOut,
     connectPartner,
     refreshFeed,
-    pushToken,
+    sendCarePing,
+    sendCareReaction,
   } = useAuth();
 
   const [friends, setFriends] = useState<FriendRecord[]>([]);
@@ -47,6 +51,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn }) =
   // Partner connect code input
   const [partnerCodeInput, setPartnerCodeInput] = useState<string>('');
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
+  const [lastSentReaction, setLastSentReaction] = useState<string | null>(null);
 
   // Custom demo login input modal
   const [isCustomLoginOpen, setIsCustomLoginOpen] = useState<boolean>(false);
@@ -62,7 +67,65 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn }) =
     setFriends(list);
   };
 
-  const handleConnectPartner = async () => {
+  // Generate Smart Invite Link for Messengers
+  const getInviteUrl = () => {
+    if (!user) return API_BASE_URL;
+    const from = encodeURIComponent(user.name || 'Близкий человек');
+    return `${API_BASE_URL}/?invite=${user.inviteCode}&from=${from}`;
+  };
+
+  const handleShareInviteLink = async () => {
+    if (!user) return;
+    triggerHaptic('medium');
+    const url = getInviteUrl();
+    const text = `Привет! Я делюсь своим настроением в приложении «Как я?». Давай свяжемся, чтобы чувствовать друг друга и поддерживать: ${url}`;
+
+    if (Platform.OS === 'web' && typeof navigator !== 'undefined' && (navigator as any).share) {
+      try {
+        await (navigator as any).share({
+          title: 'Приглашение в «Как я?»',
+          text,
+          url,
+        });
+        return;
+      } catch (err) {
+        // Fallback to clipboard
+      }
+    }
+
+    if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
+      await navigator.clipboard.writeText(url);
+      alert(`Ссылка-приглашение скопирована в буфер обмена!\n\nОтправьте её в Telegram, WhatsApp или iMessage:\n${url}`);
+    } else {
+      Alert.alert(
+        'Ссылка-приглашение готова!',
+        `Отправьте её вашему партнёру в мессенджере:\n\n${url}`,
+        [{ text: 'Понятно', style: 'default' }]
+      );
+    }
+  };
+
+  // Connect via pending invite link
+  const handleAcceptPendingInvite = async () => {
+    if (!pendingInvite) return;
+    setIsConnecting(true);
+    triggerHaptic('medium');
+    const result = await connectPartner(pendingInvite.code);
+    setIsConnecting(false);
+
+    if (result.success) {
+      triggerHaptic('success');
+      Alert.alert(
+        'Успешно связано! ❤️',
+        `Вы теперь на связи с ${pendingInvite.fromName || result.partner?.name || 'партнёром'}. Настроение и чекины будут обновляться в реальном времени!`
+      );
+    } else {
+      triggerHaptic('light');
+      Alert.alert('Не удалось подключить', result.error || 'Проверьте ссылку');
+    }
+  };
+
+  const handleConnectPartnerByCode = async () => {
     if (!partnerCodeInput.trim()) {
       Alert.alert('Ошибка', 'Введите 6-значный код партнёра');
       return;
@@ -77,11 +140,37 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn }) =
       setPartnerCodeInput('');
       Alert.alert(
         'Успешно связано! ❤️',
-        `Вы успешно подключились к пользователю ${result.partner?.name}. Теперь вы будете видеть настроение друг друга в реальном времени с push-уведомлениями!`
+        `Вы успешно подключились к пользователю ${result.partner?.name}. Теперь вы будете видеть настроение друг друга в реальном времени!`
       );
     } else {
       triggerHaptic('light');
       Alert.alert('Не удалось подключить', result.error || 'Проверьте правильность кода');
+    }
+  };
+
+  // Care Ping: «Спросить: Как ты?»
+  const handleSendPing = async (partnerId?: string) => {
+    triggerHaptic('medium');
+    const res = await sendCarePing(partnerId);
+    if (res.success) {
+      triggerHaptic('success');
+      Alert.alert('Пинг заботы отправлен! 💭', 'Партнёру на телефон придёт мягкое уведомление: «Интересуется, как ты?»');
+    } else {
+      Alert.alert('Не удалось отправить', res.message);
+    }
+  };
+
+  // Care Reaction (Обнять, Я рядом, Горжусь, Хочешь поговорить?)
+  const handleSendCareReaction = async (
+    partnerId: string,
+    reactionType: string,
+    reactionLabel: string
+  ) => {
+    triggerHaptic('success');
+    setLastSentReaction(reactionLabel);
+    const res = await sendCareReaction(partnerId, reactionType, reactionLabel);
+    if (res.success) {
+      setTimeout(() => setLastSentReaction(null), 3500);
     }
   };
 
@@ -96,12 +185,6 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn }) =
         Alert.alert(t('friends.title'), t('friends.emptySubtitle'));
       }
     }
-  };
-
-  const handleSendReaction = async (friendId: string, reactionLabel: string) => {
-    triggerHaptic('success');
-    const updated = await recordFriendReaction(friendId, reactionLabel);
-    setFriends(updated);
   };
 
   const handleAddFriend = async () => {
@@ -161,6 +244,14 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn }) =
     return t('friends.relOther');
   };
 
+  // Primary partner (if connected) & their latest check-in
+  const primaryPartner = partners.length > 0 ? partners[0] : null;
+  const partnerLatestCheckIn = partnerFeed.length > 0 ? partnerFeed[0] : null;
+  const partnerQuad = partnerLatestCheckIn
+    ? QUADRANTS[partnerLatestCheckIn.quadrant as keyof typeof QUADRANTS]
+    : null;
+  const partnerColor = partnerQuad?.color_hex || '#4FD1C5';
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Top Header */}
@@ -182,7 +273,73 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn }) =
         </TouchableOpacity>
       </View>
 
-      {/* Cloud & Live Sync Card */}
+      {/* 1. INCOMING INVITE BANNER (When someone opened by ?invite=CODE link) */}
+      {pendingInvite && (
+        <View style={styles.incomingInviteCard}>
+          <View style={styles.incomingInviteHeader}>
+            <View style={styles.incomingHeartCircle}>
+              <Ionicons name="heart" size={24} color="#ED64A6" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.incomingInviteTitle}>
+                {pendingInvite.fromName
+                  ? `${pendingInvite.fromName} приглашает вас!`
+                  : 'Приглашение в Близкий Круг!'}
+              </Text>
+              <Text style={styles.incomingInviteSub}>
+                Свяжитесь в приложении, чтобы видеть настроение друг друга в реальном времени.
+              </Text>
+            </View>
+          </View>
+
+          {isAuthenticated ? (
+            <TouchableOpacity
+              style={styles.acceptInviteBtn}
+              onPress={handleAcceptPendingInvite}
+              disabled={isConnecting}
+            >
+              <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
+              <Text style={styles.acceptInviteBtnText}>
+                {isConnecting ? 'Подключение...' : 'Принять приглашение и связаться'}
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.incomingLoginPrompt}>
+              <Text style={styles.incomingLoginPromptText}>
+                Войдите за 1 клик, чтобы автоматически стать парой:
+              </Text>
+              <View style={styles.demoButtonsRow}>
+                <TouchableOpacity
+                  style={[styles.demoBtn, { borderColor: '#ED64A6' }]}
+                  onPress={async () => {
+                    await signInDemo('Аня (Жена)', 'anya@example.com');
+                  }}
+                >
+                  <Text style={styles.demoBtnText}>🌸 Войти как Жена</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.demoBtn, { borderColor: '#4299E1' }]}
+                  onPress={async () => {
+                    await signInDemo('Вася', 'vasya@example.com');
+                  }}
+                >
+                  <Text style={styles.demoBtnText}>⚡ Войти как Вася</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.demoBtn, { borderColor: '#718096' }]}
+                  onPress={() => setIsCustomLoginOpen(true)}
+                >
+                  <Text style={styles.demoBtnText}>✏️ Своё имя</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* 2. AUTH / PROFILE & SMART SHARE CARD */}
       {!isAuthenticated ? (
         <View style={styles.authCard}>
           <View style={styles.authHeader}>
@@ -191,9 +348,9 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn }) =
               <Text style={styles.authBadgeText}>Облако & Связь с близкими</Text>
             </View>
           </View>
-          <Text style={styles.authTitle}>Синхронизация и Push-уведомления</Text>
+          <Text style={styles.authTitle}>Синхронизация и поддержка</Text>
           <Text style={styles.authDesc}>
-            Войдите, чтобы ваши чекины никогда не терялись при обновлении, а муж/жена видели ваше настроение с мгновенными push-уведомлениями.
+            Войдите, чтобы делиться чувствами со своей второй половинкой, получать push-уведомления и обмениваться знаками заботы.
           </Text>
 
           {/* Login Buttons */}
@@ -250,157 +407,261 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn }) =
             </TouchableOpacity>
           </View>
 
-          {/* My Invite Code */}
-          <View style={styles.inviteCodeBox}>
-            <View>
-              <Text style={styles.inviteCodeLabel}>Ваш код для привязки партнёра:</Text>
-              <Text style={styles.inviteCodeValue}>{user?.inviteCode}</Text>
+          {/* SMART INVITE LINK BUTTON (Golden Flow via Messengers) */}
+          <TouchableOpacity
+            style={styles.smartShareButton}
+            onPress={handleShareInviteLink}
+            activeOpacity={0.85}
+          >
+            <View style={styles.smartShareIconCircle}>
+              <Ionicons name="paper-plane" size={20} color="#FFFFFF" />
             </View>
-            <TouchableOpacity
-              style={styles.copyCodeBtn}
-              onPress={() => {
-                triggerHaptic('success');
-                Alert.alert(
-                  'Код скопирован!',
-                  `Передайте код ${user?.inviteCode} вашему партнёру (мужу/жене), чтобы он(а) ввёл(а) его в своём приложении.`
-                );
-              }}
-            >
-              <Ionicons name="copy-outline" size={18} color="#4FD1C5" />
-              <Text style={styles.copyCodeText}>Скопировать</Text>
-            </TouchableOpacity>
-          </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.smartShareTitle}>Пригласить близкого (ссылка)</Text>
+              <Text style={styles.smartShareDesc}>
+                Отправьте ссылку в Telegram или WhatsApp — партнёр свяжется в 1 клик
+              </Text>
+            </View>
+            <Ionicons name="share-outline" size={20} color="#4FD1C5" />
+          </TouchableOpacity>
 
-          {/* Push Status */}
-          <View style={styles.pushStatusRow}>
-            <Ionicons name="notifications" size={16} color="#48BB78" />
-            <Text style={styles.pushStatusText}>
-              Push-уведомления для партнёров активны
+          {/* Alternative manual code */}
+          <View style={styles.inviteCodeRow}>
+            <Text style={styles.inviteCodeText}>
+              Или код для ручного ввода: <Text style={styles.inviteCodeHighlight}>{user?.inviteCode}</Text>
             </Text>
           </View>
 
-          {/* Connect Partner Section */}
-          <View style={styles.connectPartnerSection}>
-            <Text style={styles.connectTitle}>Подключить партнёра по коду:</Text>
-            <View style={styles.connectInputRow}>
-              <TextInput
-                style={styles.connectInput}
-                placeholder="Вставьте 6-значный код..."
-                placeholderTextColor="#718096"
-                value={partnerCodeInput}
-                onChangeText={setPartnerCodeInput}
-                autoCapitalize="characters"
-                maxLength={8}
-              />
-              <TouchableOpacity
-                style={styles.connectBtn}
-                onPress={handleConnectPartner}
-                disabled={isConnecting}
-              >
-                <Text style={styles.connectBtnText}>
-                  {isConnecting ? '...' : 'Связать'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Connected Partners List */}
-          {partners.length > 0 && (
-            <View style={styles.connectedPartnersWrap}>
-              <Text style={styles.connectedTitle}>Ваша пара / Подключенные близкие:</Text>
-              {partners.map((p) => (
-                <View key={p.id} style={styles.partnerItem}>
-                  <View style={styles.partnerItemLeft}>
-                    <View style={styles.partnerDot} />
-                    <Text style={styles.partnerItemName}>{p.name}</Text>
-                  </View>
-                  <Text style={styles.partnerActiveBadge}>❤️ На связи</Text>
-                </View>
-              ))}
+          {/* Connect by Code (if partner sent their code) */}
+          {partners.length === 0 && (
+            <View style={styles.connectPartnerSection}>
+              <Text style={styles.connectTitle}>Или введите полученный код партнёра:</Text>
+              <View style={styles.connectInputRow}>
+                <TextInput
+                  style={styles.connectInput}
+                  placeholder="Вставьте 6-значный код..."
+                  placeholderTextColor="#718096"
+                  value={partnerCodeInput}
+                  onChangeText={setPartnerCodeInput}
+                  autoCapitalize="characters"
+                  maxLength={8}
+                />
+                <TouchableOpacity
+                  style={styles.connectBtn}
+                  onPress={handleConnectPartnerByCode}
+                  disabled={isConnecting}
+                >
+                  <Text style={styles.connectBtnText}>
+                    {isConnecting ? '...' : 'Связать'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
         </View>
       )}
 
-      {/* LIVE PARTNER FEED */}
-      {isAuthenticated && partners.length > 0 && (
-        <View style={styles.liveFeedSection}>
-          <View style={styles.liveFeedHeader}>
-            <View style={styles.liveFeedHeaderLeft}>
-              <View style={styles.livePulseDot} />
-              <Text style={styles.liveFeedTitle}>Чекины партнёра в реальном времени</Text>
+      {/* 3. HERO: «ПУЛЬС ПАРТНЁРА» (LIVE MOOD HERO WIDGET) */}
+      {isAuthenticated && primaryPartner && (
+        <View style={[styles.heroPartnerCard, { borderColor: partnerColor }]}>
+          <View style={styles.heroPartnerTop}>
+            <View style={styles.heroPartnerLeft}>
+              <View style={[styles.heroAvatarCircle, { backgroundColor: partnerColor }]}>
+                <Text style={styles.heroAvatarText}>
+                  {primaryPartner.name.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              <View>
+                <View style={styles.heroNameRow}>
+                  <Text style={styles.heroPartnerName}>{primaryPartner.name}</Text>
+                  <View style={styles.heroPartnerBadge}>
+                    <Text style={styles.heroPartnerBadgeText}>❤️ На связи</Text>
+                  </View>
+                </View>
+                <Text style={styles.heroPartnerStatusSub}>
+                  {partnerLatestCheckIn
+                    ? 'Текущее эмоциональное состояние:'
+                    : 'Партнёр ещё не отмечал настроение'}
+                </Text>
+              </View>
             </View>
+
             <TouchableOpacity onPress={refreshFeed} style={styles.refreshFeedBtn}>
               <Ionicons name="refresh" size={18} color="#4FD1C5" />
             </TouchableOpacity>
           </View>
 
-          {partnerFeed.length === 0 ? (
-            <View style={styles.emptyFeedBox}>
-              <Ionicons name="heart-outline" size={32} color="#718096" />
-              <Text style={styles.emptyFeedText}>
-                Партнёр ещё не делал чекинов. Как только партнёр отметит настроение, вам придёт Push-уведомление, и оно появится здесь!
-              </Text>
+          {partnerLatestCheckIn ? (
+            <View style={styles.partnerStateBox}>
+              <View style={styles.partnerEmotionRow}>
+                <View style={[styles.emotionPillBig, { backgroundColor: partnerColor }]}>
+                  <Text style={styles.emotionPillBigText}>
+                    {partnerLatestCheckIn.emotion_id.toUpperCase()}
+                  </Text>
+                </View>
+
+                <View style={styles.partnerTimeBox}>
+                  <Ionicons name="time-outline" size={14} color="#A0AEC0" />
+                  <Text style={styles.partnerTimeText}>
+                    {new Date(partnerLatestCheckIn.created_at).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </Text>
+                </View>
+              </View>
+
+              {partnerLatestCheckIn.note && (
+                <Text style={styles.heroPartnerNote}>
+                  "{partnerLatestCheckIn.note}"
+                </Text>
+              )}
+
+              {/* Context tags */}
+              <View style={styles.heroTagsRow}>
+                {partnerLatestCheckIn.context_people?.map((p, i) => (
+                  <View key={i} style={styles.heroTag}>
+                    <Text style={styles.heroTagText}>👤 {p}</Text>
+                  </View>
+                ))}
+                {partnerLatestCheckIn.context_place?.map((p, i) => (
+                  <View key={i} style={styles.heroTag}>
+                    <Text style={styles.heroTagText}>📍 {p}</Text>
+                  </View>
+                ))}
+                {partnerLatestCheckIn.context_activity?.map((p, i) => (
+                  <View key={i} style={styles.heroTag}>
+                    <Text style={styles.heroTagText}>⚡ {p}</Text>
+                  </View>
+                ))}
+              </View>
             </View>
           ) : (
-            <View style={styles.feedList}>
-              {partnerFeed.map((item) => {
-                const quad = QUADRANTS[item.quadrant as keyof typeof QUADRANTS];
-                const color = quad?.color_hex || '#4FD1C5';
-                const date = new Date(item.created_at);
-                const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                const dateStr = date.toLocaleDateString([], { day: 'numeric', month: 'short' });
-
-                return (
-                  <View key={item.id} style={[styles.feedCard, { borderLeftColor: color }]}>
-                    <View style={styles.feedCardTop}>
-                      <View style={styles.feedUserRow}>
-                        <View style={[styles.feedDot, { backgroundColor: color }]} />
-                        <Text style={styles.feedUserName}>{item.user_name || 'Партнёр'}</Text>
-                      </View>
-                      <Text style={styles.feedTime}>{dateStr}, {timeStr}</Text>
-                    </View>
-
-                    <View style={styles.feedEmotionRow}>
-                      <Text style={[styles.feedEmotionTitle, { color }]}>
-                        {item.emotion_id.toUpperCase()}
-                      </Text>
-                      <Text style={styles.feedIntensity}>
-                        Интенсивность: {item.intensity}/3
-                      </Text>
-                    </View>
-
-                    {item.note && (
-                      <Text style={styles.feedNote}>"{item.note}"</Text>
-                    )}
-
-                    {/* Context tags */}
-                    <View style={styles.feedTagsRow}>
-                      {item.context_people?.map((p, i) => (
-                        <View key={i} style={styles.feedTag}>
-                          <Text style={styles.feedTagText}>👤 {p}</Text>
-                        </View>
-                      ))}
-                      {item.context_place?.map((p, i) => (
-                        <View key={i} style={styles.feedTag}>
-                          <Text style={styles.feedTagText}>📍 {p}</Text>
-                        </View>
-                      ))}
-                      {item.context_activity?.map((p, i) => (
-                        <View key={i} style={styles.feedTag}>
-                          <Text style={styles.feedTagText}>⚡ {p}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-                );
-              })}
+            <View style={styles.noCheckinNotice}>
+              <Text style={styles.noCheckinNoticeText}>
+                Партнёр ещё не делал чекинов. Отправьте «Пинг заботы», чтобы спросить, как дела!
+              </Text>
             </View>
           )}
+
+          {/* Feedback banner when reaction is sent */}
+          {lastSentReaction && (
+            <View style={styles.reactionSentBanner}>
+              <Ionicons name="checkmark-circle" size={16} color="#48BB78" />
+              <Text style={styles.reactionSentBannerText}>
+                Отправлено: {lastSentReaction}
+              </Text>
+            </View>
+          )}
+
+          {/* CARE MICRO-ACTIONS & PING */}
+          <View style={styles.careActionsSection}>
+            <View style={styles.careSectionHeader}>
+              <Text style={styles.careSectionTitle}>Знаки заботы и поддержка:</Text>
+              <TouchableOpacity
+                style={styles.pingCareBtn}
+                onPress={() => handleSendPing(primaryPartner.id)}
+              >
+                <Ionicons name="chatbubble-ellipses-outline" size={14} color="#4FD1C5" />
+                <Text style={styles.pingCareBtnText}>Спросить «Как ты?»</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Quick care buttons with «Хочешь поговорить?» PLACED LAST */}
+            <View style={styles.careButtonsGrid}>
+              <TouchableOpacity
+                style={styles.careBtn}
+                onPress={() =>
+                  handleSendCareReaction(primaryPartner.id, 'hug', '🤗 Теплые объятия для тебя!')
+                }
+              >
+                <Text style={styles.careBtnEmoji}>🤗</Text>
+                <Text style={styles.careBtnLabel}>Обнять</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.careBtn}
+                onPress={() =>
+                  handleSendCareReaction(primaryPartner.id, 'with_you', '🤍 Я рядом, помни об этом!')
+                }
+              >
+                <Text style={styles.careBtnEmoji}>🤍</Text>
+                <Text style={styles.careBtnLabel}>Я рядом</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.careBtn}
+                onPress={() =>
+                  handleSendCareReaction(primaryPartner.id, 'proud', '🌟 Горжусь тобой и твоими успехами!')
+                }
+              >
+                <Text style={styles.careBtnEmoji}>🌟</Text>
+                <Text style={styles.careBtnLabel}>Горжусь</Text>
+              </TouchableOpacity>
+
+              {/* «Хочешь поговорить?» is placed LAST as requested */}
+              <TouchableOpacity
+                style={[styles.careBtn, styles.careBtnTalk]}
+                onPress={() =>
+                  handleSendCareReaction(primaryPartner.id, 'talk', '☕ Если захочешь поговорить — я всегда на связи.')
+                }
+              >
+                <Text style={styles.careBtnEmoji}>☕</Text>
+                <Text style={styles.careBtnLabel}>Хочешь поговорить?</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
       )}
 
-      {/* Share My Mood Banner */}
+      {/* 4. PARTNER CHECK-IN HISTORY TIMELINE */}
+      {isAuthenticated && partnerFeed.length > 1 && (
+        <View style={styles.historySection}>
+          <Text style={styles.historySectionTitle}>История чекинов партнёра</Text>
+          <View style={styles.feedList}>
+            {partnerFeed.slice(1).map((item) => {
+              const quad = QUADRANTS[item.quadrant as keyof typeof QUADRANTS];
+              const color = quad?.color_hex || '#4FD1C5';
+              const date = new Date(item.created_at);
+              const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+              const dateStr = date.toLocaleDateString([], { day: 'numeric', month: 'short' });
+
+              return (
+                <View key={item.id} style={[styles.feedCard, { borderLeftColor: color }]}>
+                  <View style={styles.feedCardTop}>
+                    <Text style={[styles.feedEmotionTitle, { color }]}>
+                      {item.emotion_id.toUpperCase()}
+                    </Text>
+                    <Text style={styles.feedTime}>{dateStr}, {timeStr}</Text>
+                  </View>
+
+                  {item.note && <Text style={styles.feedNote}>"{item.note}"</Text>}
+
+                  <View style={styles.feedTagsRow}>
+                    {item.context_people?.map((p, i) => (
+                      <View key={i} style={styles.feedTag}>
+                        <Text style={styles.feedTagText}>👤 {p}</Text>
+                      </View>
+                    ))}
+                    {item.context_place?.map((p, i) => (
+                      <View key={i} style={styles.feedTag}>
+                        <Text style={styles.feedTagText}>📍 {p}</Text>
+                      </View>
+                    ))}
+                    {item.context_activity?.map((p, i) => (
+                      <View key={i} style={styles.feedTag}>
+                        <Text style={styles.feedTagText}>⚡ {p}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      )}
+
+      {/* 5. SHARE MY CURRENT MOOD BANNER */}
       <TouchableOpacity
         style={styles.shareBanner}
         activeOpacity={0.85}
@@ -426,9 +687,9 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn }) =
         <Ionicons name="chevron-forward" size={20} color="#718096" />
       </TouchableOpacity>
 
-      {/* Local Friends List */}
+      {/* 6. LOCAL FRIENDS LIST */}
       <View style={styles.localFriendsHeader}>
-        <Text style={styles.localFriendsTitle}>Локальный список друзей</Text>
+        <Text style={styles.localFriendsTitle}>Дополнительные контакты</Text>
       </View>
 
       {friends.length === 0 ? (
@@ -485,18 +746,6 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn }) =
                     )}
                   </View>
                 )}
-
-                <View style={styles.reactionsRow}>
-                  {['❤️', '🤗', '💪', '🙏'].map((emoji) => (
-                    <TouchableOpacity
-                      key={emoji}
-                      style={styles.reactionBtn}
-                      onPress={() => handleSendReaction(friend.id, emoji)}
-                    >
-                      <Text style={styles.reactionEmoji}>{emoji}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
               </View>
             );
           })}
@@ -512,12 +761,12 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn }) =
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Быстрый вход</Text>
-            <Text style={styles.modalSub}>Введите имя и email для создания сессии</Text>
+            <Text style={styles.modalTitle}>Вход в профиль</Text>
+            <Text style={styles.modalSub}>Введите имя и email для создания аккаунта</Text>
 
             <TextInput
               style={styles.input}
-              placeholder="Имя (например, Иван)"
+              placeholder="Ваше имя (например, Иван)"
               placeholderTextColor="#718096"
               value={customName}
               onChangeText={setCustomName}
@@ -630,7 +879,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   title: {
     fontSize: 26,
@@ -656,6 +905,66 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '600',
+  },
+
+  // Incoming Invite Banner
+  incomingInviteCard: {
+    backgroundColor: 'rgba(237, 100, 166, 0.12)',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#ED64A6',
+    padding: 16,
+    marginBottom: 20,
+  },
+  incomingInviteHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+  },
+  incomingHeartCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(237, 100, 166, 0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  incomingInviteTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  incomingInviteSub: {
+    color: '#E2E8F0',
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 2,
+  },
+  acceptInviteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ED64A6',
+    paddingVertical: 12,
+    borderRadius: 12,
+    gap: 8,
+  },
+  acceptInviteBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  incomingLoginPrompt: {
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(237, 100, 166, 0.3)',
+    paddingTop: 10,
+  },
+  incomingLoginPromptText: {
+    color: '#CBD5E0',
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 8,
   },
 
   // Auth Card
@@ -731,7 +1040,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // Profile Card
+  // Profile Card & Smart Share
   profileCard: {
     backgroundColor: '#11151C',
     borderRadius: 16,
@@ -776,51 +1085,48 @@ const styles = StyleSheet.create({
   logoutBtn: {
     padding: 8,
   },
-  inviteCodeBox: {
+  smartShareButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     backgroundColor: '#1A202C',
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 12,
+    borderRadius: 14,
+    padding: 14,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: '#319795',
+    marginBottom: 10,
   },
-  inviteCodeLabel: {
+  smartShareIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#319795',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  smartShareTitle: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  smartShareDesc: {
     color: '#A0AEC0',
     fontSize: 11,
-    fontWeight: '600',
-    marginBottom: 2,
+    lineHeight: 15,
+    marginTop: 2,
   },
-  inviteCodeValue: {
+  inviteCodeRow: {
+    marginBottom: 10,
+    paddingHorizontal: 4,
+  },
+  inviteCodeText: {
+    color: '#718096',
+    fontSize: 12,
+  },
+  inviteCodeHighlight: {
     color: '#4FD1C5',
-    fontSize: 20,
     fontWeight: '800',
-    letterSpacing: 2,
-  },
-  copyCodeBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(79, 209, 197, 0.15)',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    gap: 4,
-  },
-  copyCodeText: {
-    color: '#4FD1C5',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  pushStatusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 14,
-  },
-  pushStatusText: {
-    color: '#48BB78',
-    fontSize: 12,
-    fontWeight: '600',
+    letterSpacing: 1,
   },
   connectPartnerSection: {
     borderTopWidth: 1,
@@ -860,102 +1166,237 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
-  connectedPartnersWrap: {
-    marginTop: 14,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#2D3748',
+
+  // HERO PARTNER CARD (Пульс партнёра)
+  heroPartnerCard: {
+    backgroundColor: '#11151C',
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 22,
+    borderWidth: 1.5,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
   },
-  connectedTitle: {
-    color: '#A0AEC0',
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    marginBottom: 6,
-  },
-  partnerItem: {
+  heroPartnerTop: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#1A202C',
-    padding: 10,
-    borderRadius: 8,
-    marginTop: 4,
+    marginBottom: 14,
   },
-  partnerItemLeft: {
+  heroPartnerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  heroAvatarCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroAvatarText: {
+    color: '#0A0D12',
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  heroNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  partnerDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#ED64A6',
-  },
-  partnerItemName: {
+  heroPartnerName: {
     color: '#F7FAFC',
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 17,
+    fontWeight: '800',
   },
-  partnerActiveBadge: {
+  heroPartnerBadge: {
+    backgroundColor: 'rgba(237, 100, 166, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  heroPartnerBadgeText: {
     color: '#ED64A6',
     fontSize: 11,
     fontWeight: '700',
   },
-
-  // Live Partner Feed
-  liveFeedSection: {
-    marginBottom: 24,
+  heroPartnerStatusSub: {
+    color: '#A0AEC0',
+    fontSize: 12,
+    marginTop: 2,
   },
-  liveFeedHeader: {
+  refreshFeedBtn: {
+    padding: 6,
+  },
+  partnerStateBox: {
+    backgroundColor: '#1A202C',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 14,
+  },
+  partnerEmotionRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 8,
   },
-  liveFeedHeaderLeft: {
+  emotionPillBig: {
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+  },
+  emotionPillBigText: {
+    color: '#0A0D12',
+    fontSize: 15,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  partnerTimeBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 4,
   },
-  livePulseDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#4FD1C5',
+  partnerTimeText: {
+    color: '#A0AEC0',
+    fontSize: 12,
+    fontWeight: '600',
   },
-  liveFeedTitle: {
-    color: '#F7FAFC',
-    fontSize: 16,
+  heroPartnerNote: {
+    color: '#E2E8F0',
+    fontSize: 13,
+    fontStyle: 'italic',
+    lineHeight: 18,
+    marginBottom: 10,
+  },
+  heroTagsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  heroTag: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+  },
+  heroTagText: {
+    color: '#CBD5E0',
+    fontSize: 11,
+  },
+  noCheckinNotice: {
+    backgroundColor: '#1A202C',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+  },
+  noCheckinNoticeText: {
+    color: '#A0AEC0',
+    fontSize: 12,
+    lineHeight: 16,
+    textAlign: 'center',
+  },
+  reactionSentBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(72, 187, 120, 0.15)',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    gap: 6,
+    marginBottom: 12,
+  },
+  reactionSentBannerText: {
+    color: '#48BB78',
+    fontSize: 12,
     fontWeight: '700',
   },
-  refreshFeedBtn: {
-    padding: 4,
+
+  // Care Actions & Ping
+  careActionsSection: {
+    borderTopWidth: 1,
+    borderTopColor: '#2D3748',
+    paddingTop: 12,
   },
-  emptyFeedBox: {
-    backgroundColor: '#11151C',
-    borderRadius: 14,
-    padding: 20,
+  careSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  careSectionTitle: {
+    color: '#A0AEC0',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  pingCareBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(79, 209, 197, 0.1)',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+  },
+  pingCareBtnText: {
+    color: '#4FD1C5',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  careButtonsGrid: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  careBtn: {
+    flex: 1,
+    minWidth: 70,
+    backgroundColor: '#1A202C',
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#2D3748',
   },
-  emptyFeedText: {
-    color: '#A0AEC0',
-    fontSize: 13,
+  careBtnTalk: {
+    minWidth: 130,
+    borderColor: 'rgba(79, 209, 197, 0.3)',
+  },
+  careBtnEmoji: {
+    fontSize: 20,
+    marginBottom: 4,
+  },
+  careBtnLabel: {
+    color: '#E2E8F0',
+    fontSize: 11,
+    fontWeight: '600',
     textAlign: 'center',
-    lineHeight: 18,
-    marginTop: 8,
+  },
+
+  // History timeline
+  historySection: {
+    marginBottom: 20,
+  },
+  historySectionTitle: {
+    color: '#A0AEC0',
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 10,
   },
   feedList: {
-    gap: 12,
+    gap: 10,
   },
   feedCard: {
     backgroundColor: '#11151C',
-    borderRadius: 14,
-    padding: 14,
+    borderRadius: 12,
+    padding: 12,
     borderLeftWidth: 4,
     borderWidth: 1,
     borderColor: '#2D3748',
@@ -964,48 +1405,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 6,
+    marginBottom: 4,
   },
-  feedUserRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  feedDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  feedUserName: {
-    color: '#F7FAFC',
+  feedEmotionTitle: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   feedTime: {
     color: '#718096',
     fontSize: 11,
   },
-  feedEmotionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  feedEmotionTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  feedIntensity: {
-    color: '#A0AEC0',
-    fontSize: 11,
-  },
   feedNote: {
     color: '#E2E8F0',
-    fontSize: 13,
+    fontSize: 12,
     fontStyle: 'italic',
-    lineHeight: 18,
-    marginBottom: 8,
+    lineHeight: 16,
+    marginBottom: 6,
   },
   feedTagsRow: {
     flexDirection: 'row',
@@ -1014,13 +1430,13 @@ const styles = StyleSheet.create({
   },
   feedTag: {
     backgroundColor: '#1A202C',
-    paddingVertical: 3,
-    paddingHorizontal: 8,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
     borderRadius: 6,
   },
   feedTagText: {
     color: '#CBD5E0',
-    fontSize: 11,
+    fontSize: 10,
   },
 
   // Share Banner
@@ -1073,7 +1489,7 @@ const styles = StyleSheet.create({
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 40,
+    paddingVertical: 30,
     backgroundColor: '#11151C',
     borderRadius: 16,
     borderWidth: 1,
@@ -1081,26 +1497,26 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
   },
   emptyTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     color: '#E2E8F0',
-    marginTop: 12,
+    marginTop: 10,
   },
   emptySubtitle: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#718096',
     textAlign: 'center',
-    marginTop: 6,
-    paddingHorizontal: 30,
-    lineHeight: 18,
+    marginTop: 4,
+    paddingHorizontal: 24,
+    lineHeight: 16,
   },
   friendsList: {
-    gap: 12,
+    gap: 10,
   },
   friendCard: {
     backgroundColor: '#11151C',
-    borderRadius: 16,
-    padding: 14,
+    borderRadius: 14,
+    padding: 12,
     borderWidth: 1,
     borderColor: '#1A202C',
   },
@@ -1115,26 +1531,25 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarInitial: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
   },
   friendName: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
     color: '#F7FAFC',
   },
   friendRel: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#718096',
-    marginTop: 1,
   },
   deleteButton: {
     padding: 4,
@@ -1144,7 +1559,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderLeftWidth: 4,
     padding: 10,
-    marginTop: 10,
+    marginTop: 8,
   },
   checkInTop: {
     flexDirection: 'row',
@@ -1174,23 +1589,8 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#CBD5E0',
     fontStyle: 'italic',
-    marginTop: 6,
+    marginTop: 4,
     lineHeight: 16,
-  },
-  reactionsRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 8,
-    marginTop: 10,
-  },
-  reactionBtn: {
-    backgroundColor: '#1A202C',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 12,
-  },
-  reactionEmoji: {
-    fontSize: 14,
   },
 
   // Modal styles

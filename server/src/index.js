@@ -296,6 +296,7 @@ app.post('/api/checkins', authMiddleware, async (req, res) => {
       emotionNameRu,
       emotionNameEn,
       quadrantNameRu,
+      shareWithPartners = true,
     } = req.body;
 
     if (!emotionId || !energy || !pleasantness || !quadrant) {
@@ -305,9 +306,9 @@ app.post('/api/checkins', authMiddleware, async (req, res) => {
     const insertRes = await query(
       `INSERT INTO checkins (
          user_id, local_id, emotion_id, energy, pleasantness, intensity, quadrant,
-         context_people, context_place, context_activity, note, created_at
+         context_people, context_place, context_activity, note, share_with_partners, created_at
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE($12, NOW()))
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE($13, NOW()))
        RETURNING *`,
       [
         req.user.userId,
@@ -321,39 +322,42 @@ app.post('/api/checkins', authMiddleware, async (req, res) => {
         JSON.stringify(contextPlace || []),
         JSON.stringify(contextActivity || []),
         note || null,
+        shareWithPartners !== false,
         createdAt || null,
       ]
     );
 
     const checkin = insertRes.rows[0];
 
-    // Find all partners to send push notification
-    const partnersRes = await query(
-      `SELECT u.push_token, u.name as partner_name, cur.name as sender_name
-       FROM friendships f
-       JOIN users u ON u.id = f.friend_id
-       JOIN users cur ON cur.id = f.user_id
-       WHERE f.user_id = $1 AND f.status = 'accepted' AND f.notify_push = true AND u.push_token IS NOT NULL`,
-      [req.user.userId]
-    );
-
-    if (partnersRes.rows.length > 0) {
-      const senderName = partnersRes.rows[0].sender_name || 'Близкий человек';
-      const emotionTitle = emotionNameRu || emotionId;
-      const quadTitle = quadrantNameRu ? ` (${quadrantNameRu})` : '';
-
-      const tokens = partnersRes.rows.map(p => p.push_token);
-      sendExpoPushNotification(
-        tokens,
-        `💛 ${senderName} отметил(а) настроение`,
-        `Чувствует: ${emotionTitle}${quadTitle}`,
-        {
-          type: 'checkin',
-          checkinId: checkin.id,
-          senderName,
-          emotionId,
-        }
+    // Find all partners to send push notification ONLY IF sharing is enabled
+    if (shareWithPartners !== false) {
+      const partnersRes = await query(
+        `SELECT u.push_token, u.name as partner_name, cur.name as sender_name
+         FROM friendships f
+         JOIN users u ON u.id = f.friend_id
+         JOIN users cur ON cur.id = f.user_id
+         WHERE f.user_id = $1 AND f.status = 'accepted' AND f.notify_push = true AND u.push_token IS NOT NULL`,
+        [req.user.userId]
       );
+
+      if (partnersRes.rows.length > 0) {
+        const senderName = partnersRes.rows[0].sender_name || 'Близкий человек';
+        const emotionTitle = emotionNameRu || emotionId;
+        const quadTitle = quadrantNameRu ? ` (${quadrantNameRu})` : '';
+
+        const tokens = partnersRes.rows.map(p => p.push_token);
+        sendExpoPushNotification(
+          tokens,
+          `💛 ${senderName} отметил(а) настроение`,
+          `Чувствует: ${emotionTitle}${quadTitle}`,
+          {
+            type: 'checkin',
+            checkinId: checkin.id,
+            senderName,
+            emotionId,
+          }
+        );
+      }
     }
 
     res.json({ success: true, checkin });
@@ -377,7 +381,7 @@ app.get('/api/checkins', authMiddleware, async (req, res) => {
   }
 });
 
-// 8. Partner feed: Get partners' checkins
+// 8. Partner feed: Get partners' checkins (only if shared)
 app.get('/api/partner/feed', authMiddleware, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit || '30', 10);
@@ -386,13 +390,105 @@ app.get('/api/partner/feed', authMiddleware, async (req, res) => {
        FROM checkins c
        JOIN users u ON u.id = c.user_id
        JOIN friendships f ON f.friend_id = c.user_id
-       WHERE f.user_id = $1 AND f.status = 'accepted' AND f.share_checkins = true
+       WHERE f.user_id = $1 AND f.status = 'accepted' AND f.share_checkins = true AND (c.share_with_partners = true OR c.share_with_partners IS NULL)
        ORDER BY c.created_at DESC
        LIMIT $2`,
       [req.user.userId, limit]
     );
     res.json({ feed: feedRes.rows });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 9. Partner Care Ping («Спросить: Как ты?»)
+app.post('/api/partner/ping', authMiddleware, async (req, res) => {
+  try {
+    const { partnerId } = req.body;
+    const senderRes = await query('SELECT name FROM users WHERE id = $1', [req.user.userId]);
+    const senderName = senderRes.rows[0]?.name || 'Близкий человек';
+
+    const targetPartner = partnerId
+      ? await query('SELECT id, push_token FROM users WHERE id = $1', [partnerId])
+      : await query(
+          `SELECT u.id, u.push_token
+           FROM friendships f
+           JOIN users u ON u.id = f.friend_id
+           WHERE f.user_id = $1 AND f.status = 'accepted'
+           LIMIT 1`,
+          [req.user.userId]
+        );
+
+    if (targetPartner.rows.length === 0) {
+      return res.status(404).json({ error: 'Партнёр не найден' });
+    }
+
+    const partner = targetPartner.rows[0];
+    if (partner.push_token) {
+      sendExpoPushNotification(
+        partner.push_token,
+        `💭 ${senderName} интересуется: «Как ты?»`,
+        'Уделите минутку, чтобы отметить своё настроение в приложении.',
+        { type: 'care_ping', senderId: req.user.userId, senderName }
+      );
+    }
+
+    res.json({ success: true, message: 'Пинг заботы отправлен!' });
+  } catch (err) {
+    console.error('[PING] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 10. Partner Care Reactions (Обнять, Я рядом, Горжусь, Хочешь поговорить?)
+app.post('/api/partner/reaction', authMiddleware, async (req, res) => {
+  try {
+    const { partnerId, reactionType, reactionLabel } = req.body;
+    if (!reactionLabel) {
+      return res.status(400).json({ error: 'Укажите reactionLabel' });
+    }
+
+    const senderRes = await query('SELECT name FROM users WHERE id = $1', [req.user.userId]);
+    const senderName = senderRes.rows[0]?.name || 'Близкий человек';
+
+    // Target partner
+    const targetPartner = partnerId
+      ? await query('SELECT id, push_token FROM users WHERE id = $1', [partnerId])
+      : await query(
+          `SELECT u.id, u.push_token
+           FROM friendships f
+           JOIN users u ON u.id = f.friend_id
+           WHERE f.user_id = $1 AND f.status = 'accepted'
+           LIMIT 1`,
+          [req.user.userId]
+        );
+
+    if (targetPartner.rows.length === 0) {
+      return res.status(404).json({ error: 'Партнёр не найден' });
+    }
+
+    const partner = targetPartner.rows[0];
+
+    // Save reaction
+    await query(
+      `INSERT INTO partner_reactions (from_user_id, to_user_id, reaction_type, reaction_label)
+       VALUES ($1, $2, $3, $4)`,
+      [req.user.userId, partner.id, reactionType || 'hug', reactionLabel]
+    );
+
+    // Send push
+    if (partner.push_token) {
+      sendExpoPushNotification(
+        partner.push_token,
+        `❤️ ${senderName} отправил(а) знак заботы`,
+        reactionLabel,
+        { type: 'care_reaction', senderId: req.user.userId, reactionLabel }
+      );
+    }
+
+    res.json({ success: true, message: 'Реакция отправлена!' });
+  } catch (err) {
+    console.error('[REACTION] Error:', err);
     res.status(500).json({ error: err.message });
   }
 });

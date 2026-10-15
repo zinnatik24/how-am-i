@@ -5,6 +5,7 @@ import {
   SafeAreaView,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -51,6 +52,7 @@ export const CheckInModal: React.FC<CheckInModalProps> = ({
   const [selectedActivity, setSelectedActivity] = useState<string[]>([]);
   const [noteText, setNoteText] = useState<string>('');
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [shareWithPartners, setShareWithPartners] = useState<boolean>(true);
 
   const resetState = () => {
     setCurrentView('quadrants');
@@ -60,6 +62,7 @@ export const CheckInModal: React.FC<CheckInModalProps> = ({
     setSelectedLocation([]);
     setSelectedActivity([]);
     setNoteText('');
+    setShareWithPartners(true);
     setIsSaving(false);
   };
 
@@ -174,6 +177,7 @@ export const CheckInModal: React.FC<CheckInModalProps> = ({
         createdAt: newRecord.timestamp,
         emotionNameRu: primaryEmotion.ru.name,
         quadrantNameRu: QUADRANTS[primaryEmotion.quadrant]?.translations?.ru || primaryEmotion.quadrant,
+        shareWithPartners,
       });
 
       // Immediately redirect to main home screen
@@ -338,6 +342,38 @@ export const CheckInModal: React.FC<CheckInModalProps> = ({
               contentContainerStyle={styles.detailsScrollContent}
               showsVerticalScrollIndicator={false}
             >
+              {/* TOP PRIVACY TUMBLER */}
+              <View style={styles.privacyCard}>
+                <View style={styles.privacyCardLeft}>
+                  <View style={[styles.privacyIconCircle, !shareWithPartners && { backgroundColor: '#2D3748' }]}>
+                    <Ionicons
+                      name={shareWithPartners ? "people" : "lock-closed"}
+                      size={20}
+                      color={shareWithPartners ? "#4FD1C5" : "#A0AEC0"}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.privacyTitle}>
+                      {language === 'ru' ? 'Показывать близкому кругу' : 'Share with inner circle'}
+                    </Text>
+                    <Text style={styles.privacyDesc}>
+                      {shareWithPartners
+                        ? (language === 'ru' ? 'Близкие увидят этот чекин и получат push' : 'Partners will see this and get notified')
+                        : (language === 'ru' ? 'Личный чекин (виден только вам)' : 'Private (only visible to you)')}
+                    </Text>
+                  </View>
+                </View>
+                <Switch
+                  value={shareWithPartners}
+                  onValueChange={(val) => {
+                    triggerHaptic('light');
+                    setShareWithPartners(val);
+                  }}
+                  trackColor={{ false: '#4A5568', true: '#319795' }}
+                  thumbColor={shareWithPartners ? '#4FD1C5' : '#CBD5E0'}
+                />
+              </View>
+
               {/* SECTION 1: Selected Emotions (up to 3) */}
               <View style={styles.sectionCard}>
                 <View style={styles.sectionHeaderRow}>
@@ -796,5 +832,42 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     letterSpacing: -0.2,
+  },
+  privacyCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#11151C',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#2D3748',
+  },
+  privacyCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+    marginRight: 10,
+  },
+  privacyIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(79, 209, 197, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  privacyTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#F7FAFC',
+    marginBottom: 2,
+  },
+  privacyDesc: {
+    fontSize: 11,
+    color: '#A0AEC0',
+    lineHeight: 15,
   },
 });

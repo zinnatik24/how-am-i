@@ -37,6 +37,16 @@ CREATE TABLE IF NOT EXISTS checkins (
     context_place JSONB DEFAULT '[]'::jsonb,
     context_activity JSONB DEFAULT '[]'::jsonb,
     note TEXT,
+    share_with_partners BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS partner_reactions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    from_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    to_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    reaction_type VARCHAR(64) NOT NULL,
+    reaction_label VARCHAR(128) NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -45,3 +55,4 @@ CREATE INDEX IF NOT EXISTS idx_checkins_created_at ON checkins(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_friendships_user_id ON friendships(user_id);
 CREATE INDEX IF NOT EXISTS idx_friendships_friend_id ON friendships(friend_id);
 CREATE INDEX IF NOT EXISTS idx_users_invite_code ON users(invite_code);
+CREATE INDEX IF NOT EXISTS idx_partner_reactions_to_user ON partner_reactions(to_user_id);

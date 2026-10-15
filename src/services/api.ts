@@ -164,6 +164,7 @@ export async function saveCheckinToCloud(payload: {
   createdAt?: string;
   emotionNameRu?: string;
   quadrantNameRu?: string;
+  shareWithPartners?: boolean;
 }): Promise<void> {
   try {
     await apiFetch('/api/checkins', {
@@ -186,4 +187,24 @@ export async function fetchPartnerFeed(): Promise<CloudCheckin[]> {
     console.warn('[API] Could not fetch partner feed:', err);
     return [];
   }
+}
+
+// 8. Care Ping («Спросить: Как ты?»)
+export async function sendPartnerPingApi(partnerId?: string): Promise<{ success: boolean; message: string }> {
+  return apiFetch('/api/partner/ping', {
+    method: 'POST',
+    body: JSON.stringify({ partnerId }),
+  });
+}
+
+// 9. Care Reactions (Обнять, Я рядом, Горжусь, Хочешь поговорить?)
+export async function sendPartnerReactionApi(
+  partnerId: string,
+  reactionType: string,
+  reactionLabel: string
+): Promise<{ success: boolean; message: string }> {
+  return apiFetch('/api/partner/reaction', {
+    method: 'POST',
+    body: JSON.stringify({ partnerId, reactionType, reactionLabel }),
+  });
 }
