@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: howami_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: howami_db
+      POSTGRES_USER: howami_user
+      POSTGRES_PASSWORD: howami_secure_pwd_2026
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    ports:
+      - "127.0.0.1:5432:5432"
+    deploy:
+      resources:
+        limits:
+          memory: 150M
+    command: >
+      postgres -c shared_buffers=64MB
+               -c max_connections=40
+               -c work_mem=4MB
+               -c maintenance_work_mem=16MB
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: howami_api
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      PORT: 3001
+      NODE_ENV: production
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: howami_db
+      DB_USER: howami_user
+      DB_PASSWORD: howami_secure_pwd_2026
+      JWT_SECRET: how_am_i_secret_jwt_key_2026_super_safe
+      ALLOW_MOCK_AUTH: "true"
+    ports:
+      - "0.0.0.0:3001:3001"
+    deploy:
+      resources:
+        limits:
+          memory: 150M
+
+volumes:
+  postgres_data:
+    driver: local

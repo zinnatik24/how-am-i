@@ -10,6 +10,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LanguageProvider, useLanguage } from './src/i18n/LanguageContext';
+import { AuthProvider } from './src/context/AuthContext';
 import { CheckInRecord } from './src/types';
 import { getCheckIns, seedSampleData } from './src/storage/checkInStorage';
 import { HomeScreen } from './src/screens/HomeScreen';
@@ -197,7 +198,9 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <LanguageProvider>
-        <MainApp />
+        <AuthProvider>
+          <MainApp />
+        </AuthProvider>
       </LanguageProvider>
     </SafeAreaProvider>
   );

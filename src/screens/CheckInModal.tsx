@@ -24,6 +24,7 @@ import { ContextSelector } from '../components/ContextSelector';
 import { QuadrantCircle } from '../components/QuadrantCircle';
 import { useLanguage } from '../i18n/LanguageContext';
 import { saveCheckIn } from '../storage/checkInStorage';
+import { saveCheckinToCloud } from '../services/api';
 import { triggerHaptic } from '../utils/haptics';
 
 interface CheckInModalProps {
@@ -157,6 +158,24 @@ export const CheckInModal: React.FC<CheckInModalProps> = ({
     try {
       await saveCheckIn(newRecord);
       onCheckInSaved(newRecord);
+
+      // Async cloud sync & push notification trigger to partner
+      saveCheckinToCloud({
+        localId: newRecord.id,
+        emotionId: primaryEmotion.id,
+        energy: primaryEmotion.energy,
+        pleasantness: primaryEmotion.pleasantness,
+        intensity: primaryEmotion.intensity,
+        quadrant: primaryEmotion.quadrant,
+        contextPeople: selectedPeople,
+        contextPlace: selectedLocation,
+        contextActivity: selectedActivity,
+        note: noteText.trim() ? noteText.trim() : undefined,
+        createdAt: newRecord.timestamp,
+        emotionNameRu: primaryEmotion.ru.name,
+        quadrantNameRu: QUADRANTS[primaryEmotion.quadrant]?.translations?.ru || primaryEmotion.quadrant,
+      });
+
       // Immediately redirect to main home screen
       handleClose();
     } catch (e) {

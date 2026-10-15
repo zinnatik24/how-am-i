@@ -16,7 +16,10 @@
       "buildNumber": "1",
       "infoPlist": {
         "CFBundleDisplayName": "Как я?",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        }
       }
     },
     "android": {
@@ -34,7 +37,8 @@
       "name": "Как я? — Трекер чувств и настроения"
     },
     "plugins": [
-      "expo-localization"
+      "expo-localization",
+      "expo-web-browser"
     ]
   }
 }
