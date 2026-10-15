@@ -78,7 +78,10 @@ function MainApp() {
           />
         )}
         {currentTab === 'friends' && (
-          <FriendsScreen latestCheckIn={checkIns[0]} />
+          <FriendsScreen
+            latestCheckIn={checkIns[0]}
+            onOpenCheckIn={() => setIsCheckInOpen(true)}
+          />
         )}
         {currentTab === 'trends' && <TrendsScreen checkIns={checkIns} />}
         {currentTab === 'settings' && (
