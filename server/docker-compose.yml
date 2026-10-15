@@ -44,6 +44,9 @@ services:
       ALLOW_MOCK_AUTH: "true"
     ports:
       - "0.0.0.0:3001:3001"
+    volumes:
+      - ./dist:/app/dist
+      - ./src:/app/src
     deploy:
       resources:
         limits:
