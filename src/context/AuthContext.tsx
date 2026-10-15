@@ -18,6 +18,12 @@ import {
   sendPartnerPingApi,
   sendPartnerReactionApi,
 } from '../services/api';
+import {
+  getGoogleClientId,
+  setGoogleClientId,
+  promptGoogleSignInWeb,
+  loadGoogleGsiScript,
+} from '../services/googleAuth';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -96,6 +102,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     loadAuth();
   }, []);
 
+  // Pre-load Google Identity Services script on web
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      loadGoogleGsiScript().catch(() => {});
+    }
+  }, []);
+
   // Register push notifications when user is authenticated
   useEffect(() => {
     async function setupPush() {
@@ -146,11 +159,61 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const signInWithGoogle = async () => {
     setIsLoading(true);
     try {
-      // Direct WebBrowser OAuth or Google Prompt
-      // You can supply your Google Cloud Client ID here
+      const configuredClientId = await getGoogleClientId();
+
+      // If Client ID is available, launch real Google Sign In popup
+      if (configuredClientId && Platform.OS === 'web') {
+        try {
+          const { accessToken } = await promptGoogleSignInWeb(configuredClientId);
+          const res = await loginWithGoogleApi({ accessToken });
+          setToken(res.token);
+          setUser(res.user);
+          const fresh = await fetchMe();
+          setPartners(fresh.partners || []);
+          Alert.alert('Успешный вход!', `Добро пожаловать, ${res.user.name}!`);
+          return;
+        } catch (oauthErr: any) {
+          console.warn('[AUTH] Google OAuth error:', oauthErr);
+          Alert.alert('Google Авторизация', oauthErr.message || 'Не удалось завершить вход');
+          return;
+        }
+      }
+
+      // If no Client ID configured on Web, prompt user to enter one or use demo
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        const wantsInput = window.confirm(
+          'Google Cloud Client ID еще не сохранен.\n\n' +
+          'Нажмите OK, чтобы ввести Client ID из Google Cloud Console.\n' +
+          'Или Отмена, чтобы использовать быстрый тестовый вход (Вася / Аня).'
+        );
+
+        if (wantsInput) {
+          const inputId = window.prompt(
+            'Вставьте ваш Google Client ID (например: xxxxx.apps.googleusercontent.com):'
+          );
+          if (inputId && inputId.trim()) {
+            await setGoogleClientId(inputId.trim());
+            try {
+              const { accessToken } = await promptGoogleSignInWeb(inputId.trim());
+              const res = await loginWithGoogleApi({ accessToken });
+              setToken(res.token);
+              setUser(res.user);
+              const fresh = await fetchMe();
+              setPartners(fresh.partners || []);
+              Alert.alert('Успешный вход!', `Добро пожаловать, ${res.user.name}!`);
+              return;
+            } catch (authErr: any) {
+              Alert.alert('Ошибка Google входа', authErr.message || 'Не удалось войти');
+              return;
+            }
+          }
+        }
+      }
+
+      // Quick test fallback
       Alert.alert(
-        'Google Вход',
-        'Для входа через Google нажмите "Продолжить". Для быстрого теста без настройки Google Cloud Console используйте быстрый вход.',
+        'Быстрый вход для проверки',
+        'Выберите профиль для проверки синхронизации чекинов и близких:',
         [
           { text: 'Отмена', style: 'cancel' },
           {
@@ -158,7 +221,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             onPress: () => signInDemo('Вася', 'vasya@example.com'),
           },
           {
-            text: 'Войти как Жена Васи',
+            text: 'Войти как Аня (Жена)',
             onPress: () => signInDemo('Аня (Жена)', 'anya@example.com'),
           },
         ]

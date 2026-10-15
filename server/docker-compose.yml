@@ -48,7 +48,16 @@ services:
       resources:
         limits:
           memory: 150M
+    networks:
+      - default
+      - famehub_network
 
 volumes:
   postgres_data:
     driver: local
+
+networks:
+  default:
+  famehub_network:
+    external: true
+
