@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const GOOGLE_CLIENT_ID_STORAGE_KEY = '@howami_google_client_id';
 
-// Default Client ID from Google Cloud Console
+// Official Web Client ID from Google Cloud Console
 export const DEFAULT_GOOGLE_CLIENT_ID =
   '363382599468-fol7ilnfdtcjpurkda5h1hmugmn0val8.apps.googleusercontent.com';
 
@@ -26,64 +26,65 @@ export async function setGoogleClientId(clientId: string): Promise<void> {
 }
 
 /**
- * Loads Google Identity Services (GSI) script on Web dynamically
+ * Standard, robust OAuth 2.0 Redirect Flow.
+ * Works on Desktop, Mobile, iOS Safari, Android Chrome, and in-app webviews (Telegram/WhatsApp).
+ * No popup blocking issues.
  */
-export function loadGoogleGsiScript(): Promise<boolean> {
-  return new Promise((resolve) => {
-    if (Platform.OS !== 'web' || typeof window === 'undefined') {
-      return resolve(false);
-    }
+export function startGoogleOAuthRedirect(clientId: string): void {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') {
+    return;
+  }
 
-    if ((window as any).google?.accounts?.oauth2) {
-      return resolve(true);
-    }
-
-    const existing = document.getElementById('google-gsi-script');
-    if (existing) {
-      existing.addEventListener('load', () => resolve(true));
-      existing.addEventListener('error', () => resolve(false));
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.id = 'google-gsi-script';
-    script.src = 'https://accounts.google.com/gsi/client';
-    script.async = true;
-    script.defer = true;
-    script.onload = () => resolve(true);
-    script.onerror = () => resolve(false);
-    document.head.appendChild(script);
+  const redirectUri = window.location.origin; // https://how-am-i.famehub.ru
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: 'token',
+    scope: 'openid email profile',
+    include_granted_scopes: 'true',
+    prompt: 'select_account',
   });
+
+  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+  console.log('🔗 [AUTH] Redirecting to Google OAuth:', authUrl);
+  window.location.href = authUrl;
 }
 
 /**
- * Trigger Google OAuth popup on Web using Google Identity Services token client
+ * Parses OAuth 2.0 callback parameters from URL hash (#access_token=... or ?access_token=...)
  */
-export async function promptGoogleSignInWeb(clientId: string): Promise<{ accessToken: string }> {
-  const loaded = await loadGoogleGsiScript();
-  if (!loaded || !(window as any).google?.accounts?.oauth2) {
-    throw new Error('Не удалось загрузить библиотеку Google Identity Services');
+export function parseGoogleOAuthCallback(): { accessToken?: string; error?: string; errorDescription?: string } | null {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') {
+    return null;
   }
 
-  return new Promise((resolve, reject) => {
-    try {
-      const client = (window as any).google.accounts.oauth2.initTokenClient({
-        client_id: clientId,
-        scope: 'email profile openid',
-        callback: (response: any) => {
-          if (response.error) {
-            reject(new Error(response.error_description || response.error));
-          } else if (response.access_token) {
-            resolve({ accessToken: response.access_token });
-          } else {
-            reject(new Error('Токен Google не получен'));
-          }
-        },
-      });
+  const hash = window.location.hash ? window.location.hash.substring(1) : '';
+  const search = window.location.search ? window.location.search.substring(1) : '';
 
-      client.requestAccessToken({ prompt: 'select_account' });
-    } catch (err: any) {
-      reject(err);
+  if (!hash && !search) {
+    return null;
+  }
+
+  const params = new URLSearchParams(hash || search);
+  const accessToken = params.get('access_token');
+  const error = params.get('error');
+  const errorDescription = params.get('error_description');
+
+  if (accessToken || error) {
+    // Clean hash from URL bar without reloading the page
+    try {
+      const cleanUrl = window.location.pathname + window.location.search.replace(/[?&]access_token=[^&]+/, '');
+      window.history.replaceState({}, document.title, cleanUrl || '/');
+    } catch (e) {
+      // Ignore history state errors
     }
-  });
+
+    return {
+      accessToken: accessToken || undefined,
+      error: error || undefined,
+      errorDescription: errorDescription || undefined,
+    };
+  }
+
+  return null;
 }

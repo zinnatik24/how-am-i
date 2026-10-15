@@ -21,8 +21,8 @@ import {
 import {
   getGoogleClientId,
   setGoogleClientId,
-  promptGoogleSignInWeb,
-  loadGoogleGsiScript,
+  startGoogleOAuthRedirect,
+  parseGoogleOAuthCallback,
 } from '../services/googleAuth';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -102,10 +102,38 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     loadAuth();
   }, []);
 
-  // Pre-load Google Identity Services script on web
+  // Check for Google OAuth callback in URL hash (#access_token=... or ?access_token=...)
   useEffect(() => {
-    if (Platform.OS === 'web') {
-      loadGoogleGsiScript().catch(() => {});
+    const callback = parseGoogleOAuthCallback();
+    if (!callback) return;
+
+    if (callback.error) {
+      console.warn('[AUTH] Google OAuth error:', callback.error, callback.errorDescription);
+      Alert.alert(
+        'Ошибка Google входа',
+        callback.errorDescription || callback.error || 'Авторизация отменена'
+      );
+      return;
+    }
+
+    if (callback.accessToken) {
+      console.log('🔑 [AUTH] Received Google access token, logging in...');
+      setIsLoading(true);
+      loginWithGoogleApi({ accessToken: callback.accessToken })
+        .then(async (res) => {
+          setToken(res.token);
+          setUser(res.user);
+          const fresh = await fetchMe();
+          setPartners(fresh.partners || []);
+          Alert.alert('Успешный вход!', `Добро пожаловать, ${res.user.name}!`);
+        })
+        .catch((err: any) => {
+          console.error('[AUTH] Failed to login with Google token:', err);
+          Alert.alert('Ошибка входа', err.message || 'Не удалось завершить вход');
+        })
+        .finally(() => {
+          setIsLoading(false);
+        });
     }
   }, []);
 
@@ -161,53 +189,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const configuredClientId = await getGoogleClientId();
 
-      // If Client ID is available, launch real Google Sign In popup
+      // Launch official Google OAuth 2.0 Redirect
       if (configuredClientId && Platform.OS === 'web') {
-        try {
-          const { accessToken } = await promptGoogleSignInWeb(configuredClientId);
-          const res = await loginWithGoogleApi({ accessToken });
-          setToken(res.token);
-          setUser(res.user);
-          const fresh = await fetchMe();
-          setPartners(fresh.partners || []);
-          Alert.alert('Успешный вход!', `Добро пожаловать, ${res.user.name}!`);
-          return;
-        } catch (oauthErr: any) {
-          console.warn('[AUTH] Google OAuth error:', oauthErr);
-          Alert.alert('Google Авторизация', oauthErr.message || 'Не удалось завершить вход');
-          return;
-        }
-      }
-
-      // If no Client ID configured on Web, prompt user to enter one or use demo
-      if (Platform.OS === 'web' && typeof window !== 'undefined') {
-        const wantsInput = window.confirm(
-          'Google Cloud Client ID еще не сохранен.\n\n' +
-          'Нажмите OK, чтобы ввести Client ID из Google Cloud Console.\n' +
-          'Или Отмена, чтобы использовать быстрый тестовый вход (Вася / Аня).'
-        );
-
-        if (wantsInput) {
-          const inputId = window.prompt(
-            'Вставьте ваш Google Client ID (например: xxxxx.apps.googleusercontent.com):'
-          );
-          if (inputId && inputId.trim()) {
-            await setGoogleClientId(inputId.trim());
-            try {
-              const { accessToken } = await promptGoogleSignInWeb(inputId.trim());
-              const res = await loginWithGoogleApi({ accessToken });
-              setToken(res.token);
-              setUser(res.user);
-              const fresh = await fetchMe();
-              setPartners(fresh.partners || []);
-              Alert.alert('Успешный вход!', `Добро пожаловать, ${res.user.name}!`);
-              return;
-            } catch (authErr: any) {
-              Alert.alert('Ошибка Google входа', authErr.message || 'Не удалось войти');
-              return;
-            }
-          }
-        }
+        startGoogleOAuthRedirect(configuredClientId);
+        return;
       }
 
       // Quick test fallback

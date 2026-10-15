@@ -14,6 +14,15 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
+// Redirect raw IP traffic to official HTTPS domain
+app.use((req, res, next) => {
+  const host = req.get('host') || '';
+  if (host.includes('5.129.238.166') && !req.path.startsWith('/api') && req.path !== '/health') {
+    return res.redirect(301, `https://how-am-i.famehub.ru${req.originalUrl}`);
+  }
+  next();
+});
+
 // 1. Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'how-am-i-api', time: new Date().toISOString() });
@@ -23,6 +32,7 @@ app.get('/health', (req, res) => {
 app.post('/api/auth/google', async (req, res) => {
   try {
     const { idToken, accessToken, mockUser } = req.body;
+    console.log(`[AUTH] Google login request received, idToken: ${!!idToken}, accessToken: ${!!accessToken}`);
     let googleId = null;
     let email = null;
     let name = null;
