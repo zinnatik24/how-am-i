@@ -1,6 +1,10 @@
+import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export const API_BASE_URL = 'http://5.129.238.166:3001';
+export const API_BASE_URL =
+  Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin
+    ? window.location.origin
+    : 'http://5.129.238.166:3001';
 
 const TOKEN_KEY = '@howami_auth_token';
 const USER_KEY = '@howami_user_profile';

@@ -1,6 +1,9 @@
 import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { pool, query, waitForDb } from './db.js';
 import { signUserToken, authMiddleware, generateInviteCode } from './auth.js';
 import { sendExpoPushNotification } from './push.js';
@@ -393,6 +396,23 @@ app.get('/api/partner/feed', authMiddleware, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// 9. Web Mobile App Static Serving
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const distPath = path.resolve(__dirname, '../dist');
+
+if (fs.existsSync(distPath)) {
+  console.log(`📦 [WEB] Serving Web Mobile App from: ${distPath}`);
+  app.use(express.static(distPath));
+
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path === '/health') {
+      return next();
+    }
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
 
 // Start server
 async function start() {
