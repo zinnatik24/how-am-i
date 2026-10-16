@@ -189,10 +189,10 @@ function MainApp() {
           styles.tabBar,
           {
             paddingBottom: Platform.select({
-              ios: Math.max(6, insets.bottom),
-              android: Math.max(4, insets.bottom),
-              web: Math.max(6, insets.bottom || 0),
-              default: 6,
+              ios: Math.max(12, insets.bottom),
+              android: Math.max(6, insets.bottom),
+              web: Math.max(12, insets.bottom || 0),
+              default: 10,
             }),
           },
         ]}
@@ -308,8 +308,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#11151C',
     borderTopWidth: 1,
     borderTopColor: '#1A202C',
-    paddingTop: 6,
-    paddingBottom: 6,
+    paddingTop: 8,
+    paddingBottom: 8,
     paddingHorizontal: 8,
   },
   tabItem: {

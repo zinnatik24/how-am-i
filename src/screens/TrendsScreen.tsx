@@ -927,7 +927,7 @@ const styles = StyleSheet.create({
   content: {
     padding: 20,
     paddingTop: 16,
-    paddingBottom: 60,
+    paddingBottom: 36,
   },
   toastBanner: {
     position: 'absolute',

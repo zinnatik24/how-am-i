@@ -184,7 +184,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onCheckInsUpdate
     signInWithTelegram,
     signInWithApple,
     applyAuthSession,
-    signInDemo,
     signOut,
   } = useAuth();
 
@@ -203,7 +202,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onCheckInsUpdate
 
   // Copied toast banner
   const [isCopiedToast, setIsCopiedToast] = useState(false);
-  const [isDemoModalOpen, setIsDemoModalOpen] = useState(false);
 
   // Telegram Login State
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState(false);
@@ -211,6 +209,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onCheckInsUpdate
   const [telegramSubmitting, setTelegramSubmitting] = useState(false);
   const [isWaitingForBot, setIsWaitingForBot] = useState(false);
   const [botAuthCode, setBotAuthCode] = useState<string | null>(null);
+
+  // Apple Login State (for Web fallback / email linking)
+  const [isAppleModalOpen, setIsAppleModalOpen] = useState(false);
+  const [appleEmailInput, setAppleEmailInput] = useState('');
+  const [appleSubmitting, setAppleSubmitting] = useState(false);
 
   // Telegram Bot Deep Link Polling
   useEffect(() => {
@@ -246,20 +249,71 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onCheckInsUpdate
     try {
       const session = await createTelegramAuthSessionApi();
       if (session.success && session.botUrl) {
+        if (session.botUsername === 'HowAmI_App_Bot') {
+          Alert.alert(
+            isRu ? 'Бот еще не зарегистрирован' : 'Bot not registered',
+            isRu
+              ? 'Telegram-бот @HowAmI_App_Bot еще не создан в @BotFather.\n\nИспользуйте мгновенный вход по @username — он работает прямо сейчас без необходимости создавать бота!'
+              : 'The bot @HowAmI_App_Bot is not yet registered in @BotFather. Please use direct @username login!',
+            [
+              { text: isRu ? 'Ввести @username' : 'Use username', style: 'default' },
+              {
+                text: isRu ? 'Всё равно открыть' : 'Open anyway',
+                style: 'destructive',
+                onPress: () => {
+                  setBotAuthCode(session.authCode);
+                  setIsWaitingForBot(true);
+                  Linking.openURL(session.botUrl);
+                },
+              },
+            ]
+          );
+          return;
+        }
         setBotAuthCode(session.authCode);
         setIsWaitingForBot(true);
-        // Open Telegram app via deep link
-        await Linking.openURL(session.botUrl).catch(() => {
-          Alert.alert(
-            isRu ? 'Не удалось открыть Telegram' : 'Could not open Telegram',
-            isRu ? `Откройте бота вручную: ${session.botUrl}` : `Open the bot manually: ${session.botUrl}`
-          );
-        });
+        await Linking.openURL(session.botUrl);
       }
     } catch (e: any) {
       Alert.alert(isRu ? 'Ошибка' : 'Error', e.message || 'Не удалось запустить авторизацию через бота');
     } finally {
       setTelegramSubmitting(false);
+    }
+  };
+
+  const handleAppleLoginPress = async () => {
+    triggerHaptic('medium');
+    try {
+      await signInWithApple();
+    } catch (e: any) {
+      if (e.message === 'APPLE_MODAL_REQUIRED') {
+        setIsAppleModalOpen(true);
+      }
+    }
+  };
+
+  const handleAppleSubmit = async () => {
+    const raw = appleEmailInput.trim();
+    if (!raw || !raw.includes('@')) {
+      Alert.alert(
+        isRu ? 'Введите email' : 'Enter email',
+        isRu ? 'Укажите ваш Apple ID или email' : 'Please enter your Apple ID or email'
+      );
+      return;
+    }
+    triggerHaptic('medium');
+    setAppleSubmitting(true);
+    try {
+      await signInWithApple({
+        email: raw.toLowerCase(),
+        fullName: raw.split('@')[0],
+      });
+      setIsAppleModalOpen(false);
+      setAppleEmailInput('');
+    } catch (e: any) {
+      Alert.alert(isRu ? 'Ошибка' : 'Error', e.message || 'Не удалось войти');
+    } finally {
+      setAppleSubmitting(false);
     }
   };
 
@@ -424,7 +478,29 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onCheckInsUpdate
               </View>
               <View style={styles.profileInfoText}>
                 <Text style={styles.profileName}>{user.name}</Text>
-                <Text style={styles.profileEmail}>{user.email || 'Google Account'}</Text>
+                <Text style={styles.profileEmail}>
+                  {user.email || (user.name ? `@${user.name}` : 'Личный аккаунт')}
+                </Text>
+                <View style={styles.authBadgePill}>
+                  <Ionicons
+                    name={
+                      user.email?.includes('apple')
+                        ? 'logo-apple'
+                        : user.email?.includes('telegram') || (user as any).google_id?.startsWith('tg:')
+                        ? 'paper-plane'
+                        : 'logo-google'
+                    }
+                    size={11}
+                    color="#4FD1C5"
+                  />
+                  <Text style={styles.authBadgeText}>
+                    {user.email?.includes('apple')
+                      ? 'Apple ID'
+                      : user.email?.includes('telegram') || (user as any).google_id?.startsWith('tg:')
+                      ? 'Telegram'
+                      : 'Google Account'}
+                  </Text>
+                </View>
               </View>
             </View>
 
@@ -486,7 +562,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onCheckInsUpdate
             {/* 1. Apple Sign-In (App Store Guideline 4.8 compliant) */}
             <TouchableOpacity
               style={styles.appleBtn}
-              onPress={() => signInWithApple()}
+              onPress={handleAppleLoginPress}
               activeOpacity={0.85}
             >
               <Ionicons name="logo-apple" size={20} color="#FFFFFF" />
@@ -516,16 +592,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onCheckInsUpdate
               <Ionicons name="logo-google" size={18} color="#0A0D12" />
               <Text style={styles.googleBtnText}>
                 {isRu ? 'Войти через Google' : 'Sign in with Google'}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.demoLinkBtn}
-              onPress={() => setIsDemoModalOpen(true)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.demoLinkBtnText}>
-                {isRu ? '⚡ Быстрый вход (Демо-аккаунт)' : '⚡ Quick Demo Login'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -698,53 +764,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onCheckInsUpdate
         <Text style={styles.versionText}>{t('settings.version')} • Yale Mood Meter Framework</Text>
       </View>
 
-      {/* Demo Sign-in Modal */}
-      <Modal
-        visible={isDemoModalOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setIsDemoModalOpen(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>{isRu ? 'Быстрый демо-вход' : 'Quick Demo Sign In'}</Text>
-              <TouchableOpacity onPress={() => setIsDemoModalOpen(false)}>
-                <Ionicons name="close" size={22} color="#A0AEC0" />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.modalSubtitle}>
-              {isRu
-                ? 'Выберите профиль для проверки синхронизации:'
-                : 'Choose a demo profile to test sync:'}
-            </Text>
-
-            <TouchableOpacity
-              style={[styles.modalProfileBtn, { borderColor: '#4299E1' }]}
-              onPress={async () => {
-                setIsDemoModalOpen(false);
-                await signInDemo('Вася', 'vasya@example.com');
-              }}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.modalProfileBtnText}>⚡ Войти как Вася (vasya@example.com)</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.modalProfileBtn, { borderColor: '#ED64A6', marginTop: 10 }]}
-              onPress={async () => {
-                setIsDemoModalOpen(false);
-                await signInDemo('Лиана', 'liana@example.com');
-              }}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.modalProfileBtnText}>⚡ Войти как Лиана (liana@example.com)</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
       {/* Telegram Login Modal */}
       <Modal
         visible={isTelegramModalOpen}
@@ -797,33 +816,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onCheckInsUpdate
               <>
                 <Text style={styles.modalSubtitle}>
                   {isRu
-                    ? 'Войдите через официального Telegram-бота по Deep Link или укажите ваш @username:'
-                    : 'Sign in via official Telegram bot Deep Link or enter your @username:'}
+                    ? 'Укажите ваш Telegram @username для мгновенного входа в аккаунт:'
+                    : 'Enter your Telegram @username for instant sign-in:'}
                 </Text>
-
-                <TouchableOpacity
-                  style={styles.telegramDeepLinkBtn}
-                  onPress={handleStartBotAuth}
-                  disabled={telegramSubmitting}
-                  activeOpacity={0.85}
-                >
-                  <Ionicons name="paper-plane" size={18} color="#FFFFFF" />
-                  <Text style={styles.telegramSubmitBtnText}>
-                    {telegramSubmitting
-                      ? (isRu ? 'Подготовка...' : 'Preparing...')
-                      : (isRu ? 'Открыть бота в Telegram' : 'Open Telegram Bot')}
-                  </Text>
-                </TouchableOpacity>
-
-                <View style={styles.orDividerRow}>
-                  <View style={styles.orDividerLine} />
-                  <Text style={styles.orDividerText}>{isRu ? 'ИЛИ' : 'OR'}</Text>
-                  <View style={styles.orDividerLine} />
-                </View>
 
                 <TextInput
                   style={styles.telegramInput}
-                  placeholder={isRu ? '@username или Ваше имя' : '@username or Your Name'}
+                  placeholder={isRu ? '@username (например: @durov)' : '@username (e.g. @durov)'}
                   placeholderTextColor="#718096"
                   value={telegramInput}
                   onChangeText={setTelegramInput}
@@ -839,14 +838,103 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onCheckInsUpdate
                   disabled={telegramSubmitting}
                   activeOpacity={0.85}
                 >
+                  <Ionicons name="paper-plane" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
                   <Text style={styles.telegramSubmitBtnText}>
                     {telegramSubmitting
                       ? (isRu ? 'Вход...' : 'Signing in...')
-                      : (isRu ? 'Войти по никнейму' : 'Sign in by Username')}
+                      : (isRu ? 'Войти по никнейму Telegram' : 'Sign in by Telegram Username')}
+                  </Text>
+                </TouchableOpacity>
+
+                <View style={styles.orDividerRow}>
+                  <View style={styles.orDividerLine} />
+                  <Text style={styles.orDividerText}>{isRu ? 'ИЛИ ЧЕРЕЗ БОТА' : 'OR VIA BOT'}</Text>
+                  <View style={styles.orDividerLine} />
+                </View>
+
+                <TouchableOpacity
+                  style={styles.telegramDeepLinkBtn}
+                  onPress={handleStartBotAuth}
+                  disabled={telegramSubmitting}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="radio-outline" size={16} color="#FFFFFF" />
+                  <Text style={styles.telegramSubmitBtnText}>
+                    {telegramSubmitting
+                      ? (isRu ? 'Подготовка...' : 'Preparing...')
+                      : (isRu ? 'Открыть бота в Telegram (Deep Link)' : 'Open Telegram Bot (Deep Link)')}
                   </Text>
                 </TouchableOpacity>
               </>
             )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Apple Login Modal (for Web / non-native fallback) */}
+      <Modal
+        visible={isAppleModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsAppleModalOpen(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeaderRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View style={[styles.telegramIconCircle, { backgroundColor: '#000000', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }]}>
+                  <Ionicons name="logo-apple" size={18} color="#FFFFFF" />
+                </View>
+                <Text style={styles.modalTitle}>
+                  {isRu ? 'Вход через Apple ID' : 'Sign in with Apple ID'}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setIsAppleModalOpen(false)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name="close" size={22} color="#718096" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalSubtitle}>
+              {isRu
+                ? 'На iPhone в приложении из App Store вход происходит нативно по Face ID. В веб-версии укажите ваш Apple ID (email) для входа и синхронизации с аккаунтом:'
+                : 'In the iOS app, Apple Sign In uses Face ID. On the web, enter your Apple ID email to link or sign in:'}
+            </Text>
+
+            <TextInput
+              style={styles.telegramInput}
+              placeholder={isRu ? 'ваш_email@icloud.com' : 'your_email@icloud.com'}
+              placeholderTextColor="#718096"
+              value={appleEmailInput}
+              onChangeText={setAppleEmailInput}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              autoCorrect={false}
+              returnKeyType="done"
+              onSubmitEditing={handleAppleSubmit}
+            />
+
+            <TouchableOpacity
+              style={[styles.appleBtn, { width: '100%', marginBottom: 10 }, appleSubmitting && { opacity: 0.6 }]}
+              onPress={handleAppleSubmit}
+              disabled={appleSubmitting}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="logo-apple" size={18} color="#FFFFFF" />
+              <Text style={styles.appleBtnText}>
+                {appleSubmitting
+                  ? (isRu ? 'Вход...' : 'Signing in...')
+                  : (isRu ? 'Войти с этим Apple ID' : 'Sign in with this Apple ID')}
+              </Text>
+            </TouchableOpacity>
+
+            <Text style={styles.appleHintText}>
+              {isRu
+                ? '💡 Если вы ранее входили через Google с этим же email, аккаунты свяжутся автоматически.'
+                : '💡 If you previously signed in with Google using this email, your account will be linked automatically.'}
+            </Text>
           </View>
         </View>
       </Modal>
@@ -862,7 +950,7 @@ const styles = StyleSheet.create({
   content: {
     padding: 20,
     paddingTop: 16,
-    paddingBottom: 60,
+    paddingBottom: 36,
   },
   toastBanner: {
     position: 'absolute',
@@ -1450,4 +1538,31 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
+  authBadgePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(79, 209, 197, 0.1)',
+    borderColor: 'rgba(79, 209, 197, 0.25)',
+    borderWidth: 1,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+  },
+  authBadgeText: {
+    color: '#4FD1C5',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+  },
+  appleHintText: {
+    color: '#718096',
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: 'center',
+    marginTop: 6,
+  },
 });
+

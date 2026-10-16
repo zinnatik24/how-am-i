@@ -332,14 +332,19 @@ app.post('/api/auth/apple', async (req, res) => {
   try {
     const { appleId, email, fullName, identityToken } = req.body;
     if (!appleId && !email && !identityToken) {
-      return res.status(400).json({ error: 'Требуется appleId или identityToken' });
+      return res.status(400).json({ error: 'Требуется appleId, email или identityToken' });
     }
 
-    const cleanAppleId = appleId || (identityToken ? `apple_${crypto.createHash('sha256').update(identityToken).digest('hex').slice(0, 16)}` : `apple_user_${Date.now()}`);
-    const userEmail = email || `apple_${cleanAppleId.slice(-8)}@privaterelay.appleid.com`;
-    const displayName = fullName || 'Пользователь Apple';
+    const cleanEmail = email ? email.trim().toLowerCase() : null;
+    const cleanAppleId = appleId ? String(appleId).trim() : (identityToken ? `apple_${crypto.createHash('sha256').update(identityToken).digest('hex').slice(0, 16)}` : null);
+    const userEmail = cleanEmail || (cleanAppleId ? `apple_${cleanAppleId.slice(-8)}@privaterelay.appleid.com` : null);
+    const displayName = fullName || (cleanEmail ? cleanEmail.split('@')[0] : 'Пользователь Apple');
 
-    let userRes = await query('SELECT * FROM users WHERE apple_id = $1 OR email = $2', [cleanAppleId, userEmail]);
+    // Find existing user by apple_id OR email (crucial for account linking!)
+    let userRes = await query(
+      `SELECT * FROM users WHERE (apple_id IS NOT NULL AND apple_id = $1) OR (email IS NOT NULL AND email = $2)`,
+      [cleanAppleId, userEmail]
+    );
     let user;
 
     if (userRes.rows.length === 0) {
@@ -356,14 +361,15 @@ app.post('/api/auth/apple', async (req, res) => {
       user = userRes.rows[0];
       const updateRes = await query(
         `UPDATE users
-         SET apple_id = COALESCE($1, apple_id),
-             name = COALESCE($2, name),
+         SET apple_id = COALESCE(apple_id, $1),
+             name = COALESCE(name, $2),
              updated_at = NOW()
          WHERE id = $3
          RETURNING *`,
         [cleanAppleId, displayName, user.id]
       );
       user = updateRes.rows[0];
+      console.log(`[AUTH] Apple account linked to user: ${user.name} (${user.email})`);
     }
 
     const token = signUserToken(user);

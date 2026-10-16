@@ -39,4 +39,6 @@ Docs: https://docs.expo.dev/eas/index.md
 - If `ios/` and `android/` directories do not exist, they are generated (Continuous Native Generation). Never create or edit them by hand — configure native behavior in `app.json` and config plugins.
 - Expo Go only includes its bundled native modules. After adding a library with native code, the app needs a development build: `npx expo run:ios|android` locally, or `eas build --profile development`.
 - Prefer recommended Expo modules over third-party libraries, and check your available skills before adding dependencies. Docs: https://docs.expo.dev/versions/latest/index.md
-- **Локальная разработка**: Проект НЕ в git и не должен туда помещаться. Не использовать git-команды (commit, push, remote, checkout и т.д.). Разработка ведется строго локально.
+- **GitHub Репозиторий**: Проект синхронизируется с GitHub: `https://github.com/zinnatik24/how-am-i`. При изменениях коммитить и пушить в `main`.
+- **Decision Log**: Перед внесением архитектурных или UI-изменений ОБЯЗАТЕЛЬНО читать и соблюдать `DECISION_LOG.md` (название «Как Я?», иконки квадрантов, таб-бар без текста, primary key UUID, привязка аккаунтов, компактные отступы экранов без искусственных 130px). Все новые договоренности фиксировать в `DECISION_LOG.md`.
+

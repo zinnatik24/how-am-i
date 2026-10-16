@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { Platform, Alert } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import * as Notifications from 'expo-notifications';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { CheckInRecord } from '../types';
 import { QUADRANTS } from '../data/emotionsData';
 import {
@@ -291,21 +292,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return;
       }
 
-      // Quick test fallback
+      // If client ID is not configured
       Alert.alert(
-        'Быстрый вход для проверки',
-        'Выберите профиль для проверки синхронизации чекинов и близких:',
-        [
-          { text: 'Отмена', style: 'cancel' },
-          {
-            text: 'Войти как Вася',
-            onPress: () => signInDemo('Вася', 'vasya@example.com'),
-          },
-          {
-            text: 'Войти как Аня (Жена)',
-            onPress: () => signInDemo('Аня (Жена)', 'anya@example.com'),
-          },
-        ]
+        'Вход через Google',
+        'Google Client ID пока не настроен на сервере.'
       );
     } catch (err: any) {
       Alert.alert('Ошибка входа', err.message || 'Не удалось войти');
@@ -398,15 +388,50 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }) => {
     setIsLoading(true);
     try {
-      const p = params || {
-        appleId: `apple_${Date.now()}`,
-        email: `apple_user_${Date.now().toString(36)}@privaterelay.appleid.com`,
-        fullName: 'Пользователь Apple',
-      };
-      const res = await loginWithAppleApi(p);
-      await applyAuthSession(res);
-      Alert.alert('Успешный вход через Apple!', `Добро пожаловать, ${res.user.name}!`);
+      // 1. Native iOS Sign in with Apple (App Store build / TestFlight / Expo Go)
+      if (Platform.OS === 'ios') {
+        const isAvailable = await AppleAuthentication.isAvailableAsync().catch(() => false);
+        if (isAvailable && !params) {
+          const credential = await AppleAuthentication.signInAsync({
+            requestedScopes: [
+              AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+              AppleAuthentication.AppleAuthenticationScope.EMAIL,
+            ],
+          });
+          const fullName = credential.fullName
+            ? [credential.fullName.givenName, credential.fullName.familyName].filter(Boolean).join(' ')
+            : undefined;
+
+          const res = await loginWithAppleApi({
+            appleId: credential.user,
+            email: credential.email || undefined,
+            fullName: fullName || undefined,
+            identityToken: credential.identityToken || undefined,
+          });
+          await applyAuthSession(res);
+          Alert.alert('Успешный вход через Apple!', `Добро пожаловать, ${res.user.name}!`);
+          return;
+        }
+      }
+
+      // 2. Direct params provided (from Web Apple Modal or OAuth callback)
+      if (params && (params.email || params.appleId)) {
+        const res = await loginWithAppleApi(params);
+        await applyAuthSession(res);
+        Alert.alert('Успешный вход через Apple!', `Добро пожаловать, ${res.user.name}!`);
+        return;
+      }
+
+      // 3. If on Web and no params provided, tell caller to display Apple Modal
+      throw new Error('APPLE_MODAL_REQUIRED');
     } catch (err: any) {
+      if (err.code === 'ERR_REQUEST_CANCELED') {
+        // User cancelled Apple prompt
+        return;
+      }
+      if (err.message === 'APPLE_MODAL_REQUIRED') {
+        throw err;
+      }
       Alert.alert('Ошибка Apple входа', err.message || 'Сервер недоступен');
     } finally {
       setIsLoading(false);

@@ -45,8 +45,9 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
     chatMessages,
     pendingInvite,
     clearPendingInvite,
+    signInWithApple,
+    signInWithTelegram,
     signInWithGoogle,
-    signInDemo,
     signOut,
     connectPartner,
     refreshFeed,
@@ -76,8 +77,86 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
   // Add Partner / Invite Modal
   const [isInviteModalOpen, setIsInviteModalOpen] = useState<boolean>(false);
 
-  // Demo Login modal for development/testing
-  const [isDemoModalOpen, setIsDemoModalOpen] = useState<boolean>(false);
+  // Telegram Login Modal
+  const [isTelegramModalOpen, setIsTelegramModalOpen] = useState<boolean>(false);
+  const [telegramInput, setTelegramInput] = useState<string>('');
+  const [telegramSubmitting, setTelegramSubmitting] = useState<boolean>(false);
+
+  // Apple Login Modal
+  const [isAppleModalOpen, setIsAppleModalOpen] = useState<boolean>(false);
+  const [appleEmailInput, setAppleEmailInput] = useState<string>('');
+  const [appleSubmitting, setAppleSubmitting] = useState<boolean>(false);
+
+  const handleAppleLoginPress = async () => {
+    triggerHaptic('medium');
+    try {
+      await signInWithApple();
+    } catch (e: any) {
+      if (e.message === 'APPLE_MODAL_REQUIRED') {
+        setIsAppleModalOpen(true);
+      }
+    }
+  };
+
+  const handleAppleSubmit = async () => {
+    const raw = appleEmailInput.trim();
+    if (!raw || !raw.includes('@')) {
+      Alert.alert('Введите email', 'Укажите ваш Apple ID или email');
+      return;
+    }
+    triggerHaptic('medium');
+    setAppleSubmitting(true);
+    try {
+      await signInWithApple({
+        email: raw.toLowerCase(),
+        fullName: raw.split('@')[0],
+      });
+      setIsAppleModalOpen(false);
+      setAppleEmailInput('');
+    } catch (e: any) {
+      Alert.alert('Ошибка', e.message || 'Не удалось войти');
+    } finally {
+      setAppleSubmitting(false);
+    }
+  };
+
+  const handleTelegramLoginPress = () => {
+    triggerHaptic('medium');
+    if (typeof window !== 'undefined' && (window as any).Telegram?.WebApp?.initDataUnsafe?.user) {
+      const tgUser = (window as any).Telegram.WebApp.initDataUnsafe.user;
+      signInWithTelegram({
+        telegramId: tgUser.id,
+        username: tgUser.username,
+        firstName: tgUser.first_name,
+        lastName: tgUser.last_name,
+        photoUrl: tgUser.photo_url,
+      });
+      return;
+    }
+    setTelegramInput('');
+    setIsTelegramModalOpen(true);
+  };
+
+  const handleTelegramSubmit = async () => {
+    const raw = telegramInput.trim();
+    if (!raw) {
+      Alert.alert('Введите никнейм', 'Пожалуйста, укажите ваш Telegram @username или имя');
+      return;
+    }
+    triggerHaptic('medium');
+    setTelegramSubmitting(true);
+    try {
+      await signInWithTelegram({
+        username: raw.startsWith('@') ? raw : `@${raw}`,
+        name: raw.replace(/^@/, ''),
+      });
+      setIsTelegramModalOpen(false);
+    } catch (e: any) {
+      Alert.alert('Ошибка', e.message || 'Не удалось войти');
+    } finally {
+      setTelegramSubmitting(false);
+    }
+  };
 
   // Share checkin modal state & 3 recent checkins
   const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
@@ -582,20 +661,34 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
               </View>
             </View>
 
+            {/* 1. Apple Sign-In */}
+            <TouchableOpacity
+              style={styles.appleButton}
+              onPress={handleAppleLoginPress}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="logo-apple" size={20} color="#FFFFFF" />
+              <Text style={styles.appleButtonText}>Войти с Apple</Text>
+            </TouchableOpacity>
+
+            {/* 2. Telegram Sign-In */}
+            <TouchableOpacity
+              style={styles.telegramButton}
+              onPress={handleTelegramLoginPress}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="paper-plane" size={18} color="#FFFFFF" />
+              <Text style={styles.telegramButtonText}>Войти через Telegram</Text>
+            </TouchableOpacity>
+
+            {/* 3. Google Sign-In */}
             <TouchableOpacity
               style={styles.googleButton}
               onPress={signInWithGoogle}
               activeOpacity={0.85}
             >
-              <Ionicons name="logo-google" size={20} color="#0A0D12" />
+              <Ionicons name="logo-google" size={18} color="#0A0D12" />
               <Text style={styles.googleButtonText}>Войти через Google</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.demoLink}
-              onPress={() => setIsDemoModalOpen(true)}
-            >
-              <Text style={styles.demoLinkText}>⚡ Быстрый тестовый вход (Демо)</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -609,6 +702,31 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
               <Text style={styles.headerTitle}>Близкие</Text>
               <Text style={styles.headerSubtitle}>Пригласите партнёра для начала общения</Text>
             </View>
+          </View>
+
+          {/* Active User Account Strip */}
+          <View style={styles.friendsAccountBar}>
+            <View style={styles.friendsAccountLeft}>
+              <View style={styles.friendsAvatarSmall}>
+                <Text style={styles.friendsAvatarText}>
+                  {user?.name ? user.name.charAt(0).toUpperCase() : 'Я'}
+                </Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.friendsAccountName} numberOfLines={1}>{user?.name}</Text>
+                <Text style={styles.friendsAccountSub} numberOfLines={1}>
+                  {user?.email || (user?.name ? `@${user.name}` : '')}
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={styles.friendsSwitchAccountBtn}
+              onPress={() => signOut()}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="log-out-outline" size={14} color="#FC8181" />
+              <Text style={styles.friendsSwitchAccountText}>Сменить</Text>
+            </TouchableOpacity>
           </View>
 
           {/* Incoming Invite Banner if user opened through invite link */}
@@ -739,6 +857,31 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
                 <Text style={styles.inviteChatHeaderBtnText}>Пригласить</Text>
               </TouchableOpacity>
             </View>
+          </View>
+
+          {/* Active User Account Strip */}
+          <View style={styles.friendsAccountBar}>
+            <View style={styles.friendsAccountLeft}>
+              <View style={styles.friendsAvatarSmall}>
+                <Text style={styles.friendsAvatarText}>
+                  {user?.name ? user.name.charAt(0).toUpperCase() : 'Я'}
+                </Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.friendsAccountName} numberOfLines={1}>{user?.name}</Text>
+                <Text style={styles.friendsAccountSub} numberOfLines={1}>
+                  {user?.email || (user?.name ? `@${user.name}` : '')}
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={styles.friendsSwitchAccountBtn}
+              onPress={() => signOut()}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="log-out-outline" size={14} color="#FC8181" />
+              <Text style={styles.friendsSwitchAccountText}>Сменить</Text>
+            </TouchableOpacity>
           </View>
 
           {/* Section Heading */}
@@ -1622,46 +1765,107 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
 
 
 
-      {/* 7. MODAL: DEMO LOGIN */}
+      {/* Telegram Login Modal */}
       <Modal
-        visible={isDemoModalOpen}
+        visible={isTelegramModalOpen}
         transparent
         animationType="fade"
-        onRequestClose={() => setIsDemoModalOpen(false)}
+        onRequestClose={() => setIsTelegramModalOpen(false)}
       >
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Быстрый вход для тестирования</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="paper-plane" size={20} color="#2AABEE" />
+                <Text style={styles.modalTitle}>Вход через Telegram</Text>
+              </View>
+              <TouchableOpacity onPress={() => setIsTelegramModalOpen(false)}>
+                <Ionicons name="close" size={22} color="#718096" />
+              </TouchableOpacity>
+            </View>
+
             <Text style={styles.modalSubtitle}>
-              Выберите профиль для проверки синхронизации чекинов и чата:
+              Укажите ваш Telegram @username для мгновенного входа:
             </Text>
 
-            <TouchableOpacity
-              style={[styles.modalBtn, { borderColor: '#4299E1' }]}
-              onPress={async () => {
-                setIsDemoModalOpen(false);
-                await signInDemo('Вася', 'vasya@example.com');
-              }}
-            >
-              <Text style={styles.modalBtnText}>⚡ Войти как Вася</Text>
-            </TouchableOpacity>
+            <TextInput
+              style={styles.codeEntryInput}
+              placeholder="@username (например: @durov)"
+              placeholderTextColor="#718096"
+              value={telegramInput}
+              onChangeText={setTelegramInput}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="done"
+              onSubmitEditing={handleTelegramSubmit}
+            />
 
             <TouchableOpacity
-              style={[styles.modalBtn, { borderColor: '#ED64A6' }]}
-              onPress={async () => {
-                setIsDemoModalOpen(false);
-                await signInDemo('Аня (Жена)', 'anya@example.com');
-              }}
+              style={[styles.telegramButton, { marginTop: 12 }, telegramSubmitting && { opacity: 0.6 }]}
+              onPress={handleTelegramSubmit}
+              disabled={telegramSubmitting}
+              activeOpacity={0.85}
             >
-              <Text style={styles.modalBtnText}>🌸 Войти как Аня (Жена)</Text>
+              <Ionicons name="paper-plane" size={16} color="#FFFFFF" />
+              <Text style={styles.telegramButtonText}>
+                {telegramSubmitting ? 'Вход...' : 'Войти по никнейму Telegram'}
+              </Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Apple Login Modal */}
+      <Modal
+        visible={isAppleModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsAppleModalOpen(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="logo-apple" size={20} color="#FFFFFF" />
+                <Text style={styles.modalTitle}>Вход через Apple ID</Text>
+              </View>
+              <TouchableOpacity onPress={() => setIsAppleModalOpen(false)}>
+                <Ionicons name="close" size={22} color="#718096" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalSubtitle}>
+              Укажите ваш Apple ID email для входа и синхронизации:
+            </Text>
+
+            <TextInput
+              style={styles.codeEntryInput}
+              placeholder="ваш_email@icloud.com"
+              placeholderTextColor="#718096"
+              value={appleEmailInput}
+              onChangeText={setAppleEmailInput}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              autoCorrect={false}
+              returnKeyType="done"
+              onSubmitEditing={handleAppleSubmit}
+            />
 
             <TouchableOpacity
-              style={styles.modalCancelBtn}
-              onPress={() => setIsDemoModalOpen(false)}
+              style={[styles.appleButton, { marginTop: 12 }, appleSubmitting && { opacity: 0.6 }]}
+              onPress={handleAppleSubmit}
+              disabled={appleSubmitting}
+              activeOpacity={0.85}
             >
-              <Text style={styles.modalCancelBtnText}>Отмена</Text>
+              <Ionicons name="logo-apple" size={18} color="#FFFFFF" />
+              <Text style={styles.appleButtonText}>
+                {appleSubmitting ? 'Вход...' : 'Войти с этим Apple ID'}
+              </Text>
             </TouchableOpacity>
+
+            <Text style={styles.appleHintText}>
+              💡 Если вы входили через Google с этим же email, данные свяжутся автоматически.
+            </Text>
           </View>
         </View>
       </Modal>
@@ -1677,7 +1881,7 @@ const styles = StyleSheet.create({
   authScrollContent: {
     paddingHorizontal: 16,
     paddingTop: 16,
-    paddingBottom: 48,
+    paddingBottom: 36,
     maxWidth: 520,
     width: '100%',
     alignSelf: 'center',
@@ -1809,6 +2013,48 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
   },
+  appleButton: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#000000',
+    paddingVertical: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    gap: 10,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+  },
+  appleButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  telegramButton: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2AABEE',
+    paddingVertical: 14,
+    borderRadius: 18,
+    gap: 10,
+    marginBottom: 10,
+    shadowColor: '#2AABEE',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+  },
+  telegramButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
   googleButton: {
     width: '100%',
     flexDirection: 'row',
@@ -1818,6 +2064,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 18,
     gap: 10,
+    marginBottom: 6,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
@@ -1829,7 +2076,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   demoLink: {
-    marginTop: 16,
+    marginTop: 14,
     paddingVertical: 6,
   },
   demoLinkText: {
@@ -1837,6 +2084,68 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     textDecorationLine: 'underline',
+  },
+  friendsAccountBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#12161F',
+    padding: 12,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    marginBottom: 16,
+  },
+  friendsAccountLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  friendsAvatarSmall: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#4FD1C5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  friendsAvatarText: {
+    color: '#0A0D12',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  friendsAccountName: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  friendsAccountSub: {
+    color: '#718096',
+    fontSize: 12,
+  },
+  friendsSwitchAccountBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(252, 129, 129, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(252, 129, 129, 0.25)',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+  },
+  friendsSwitchAccountText: {
+    color: '#FC8181',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  appleHintText: {
+    color: '#718096',
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: 'center',
+    marginTop: 10,
   },
 
   // Invite Partner Card
@@ -2019,7 +2328,7 @@ const styles = StyleSheet.create({
   chatsListContent: {
     paddingHorizontal: 16,
     paddingTop: 16,
-    paddingBottom: 40,
+    paddingBottom: 32,
     maxWidth: 600,
     width: '100%',
     alignSelf: 'center',
