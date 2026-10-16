@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   View,
   Modal,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -20,6 +21,12 @@ interface SettingsScreenProps {
   onCheckInsUpdated: (records: CheckInRecord[]) => void;
 }
 
+interface MethodologyLink {
+  titleRu: string;
+  titleEn: string;
+  url: string;
+}
+
 interface MethodologySection {
   id: string;
   titleRu: string;
@@ -28,6 +35,7 @@ interface MethodologySection {
   color: string;
   contentRu: string[];
   contentEn: string[];
+  links?: MethodologyLink[];
 }
 
 const METHODOLOGY_DATA: MethodologySection[] = [
@@ -51,6 +59,18 @@ const METHODOLOGY_DATA: MethodologySection[] = [
       '• Pleasantness (subjective valence from unpleasant to pleasant).',
       'The intersection forms four color-coded quadrants containing 144 nuanced emotional states.',
     ],
+    links: [
+      {
+        titleRu: 'Официальный сайт Йельского центра эмоционального интеллекта (YCEI)',
+        titleEn: 'Official Yale Center for Emotional Intelligence (YCEI)',
+        url: 'https://www.ycei.org/',
+      },
+      {
+        titleRu: 'Д-р Марк Брэккетт: лаборатория и книга «Permission to Feel»',
+        titleEn: 'Dr. Marc Brackett: Research Lab & "Permission to Feel"',
+        url: 'https://www.marcbrackett.com/',
+      },
+    ],
   },
   {
     id: 'quadrants_meaning',
@@ -70,6 +90,18 @@ const METHODOLOGY_DATA: MethodologySection[] = [
       '🔵 Blue (Low energy, unpleasant): Sadness, fatigue, disappointment. A signal to slow down, reflect, and repair emotional reserves. Good for analytical thinking and empathy.',
       '🟢 Green (Low energy, pleasant): Calm, gratitude, serenity. Rest and digest state (parasympathetic dominance). Essential for deep recovery and emotional restoration.',
     ],
+    links: [
+      {
+        titleRu: 'Йельская методология RULER и доказательная база',
+        titleEn: 'Yale RULER Approach & Evidence Base',
+        url: 'https://www.ycei.org/ruler',
+      },
+      {
+        titleRu: 'Научное исследование: циркумплексная модель аффекта (Russell & Barrett)',
+        titleEn: 'Circumplex Model of Affect (Russell & Barrett, PubMed)',
+        url: 'https://pubmed.ncbi.nlm.nih.gov/11142416/',
+      },
+    ],
   },
   {
     id: 'granularity',
@@ -86,6 +118,18 @@ const METHODOLOGY_DATA: MethodologySection[] = [
       'Emotional granularity is the skill of identifying and expressing nuanced emotional states rather than vague terms like "bad" or "fine".',
       'Neuroimaging demonstrates that putting precise feelings into words decreases amygdala reactivity and activates the prefrontal cortex ("Name it to tame it").',
       'Daily tracking broadens your emotional vocabulary, boosting resilience and interpersonal clarity.',
+    ],
+    links: [
+      {
+        titleRu: 'ФМРТ-исследование в Science: «Putting Feelings into Words» (Lieberman et al.)',
+        titleEn: 'Brain Imaging in Science: "Putting Feelings into Words" (Lieberman et al.)',
+        url: 'https://pubmed.ncbi.nlm.nih.gov/17576282/',
+      },
+      {
+        titleRu: 'Исследования гранулярности и здоровья: Лиза Фельдман Барретт',
+        titleEn: 'Emotional Granularity & Mental Health: Dr. Lisa Feldman Barrett',
+        url: 'https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4663189/',
+      },
     ],
   },
   {
@@ -109,6 +153,18 @@ const METHODOLOGY_DATA: MethodologySection[] = [
       '3. Label with precise emotional vocabulary.',
       '4. Express constructively in conversations and actions.',
       '5. Regulate using intentional strategies to support your well-being.',
+    ],
+    links: [
+      {
+        titleRu: 'Йельская медицинская школа: Child Study Center исследования',
+        titleEn: 'Yale School of Medicine: Child Study Center Research',
+        url: 'https://medicine.yale.edu/childstudy/',
+      },
+      {
+        titleRu: 'Научные публикации YCEI об эмоциональной грамотности',
+        titleEn: 'YCEI Research Publications on Emotional Intelligence',
+        url: 'https://www.ycei.org/research',
+      },
     ],
   },
 ];
@@ -480,6 +536,39 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onCheckInsUpdate
                         {p}
                       </Text>
                     ))}
+
+                    {/* Scientific Research & Yale University Links */}
+                    {item.links && item.links.length > 0 && (
+                      <View style={styles.accordionLinksBox}>
+                        <Text style={styles.accordionLinksTitle}>
+                          {isRu
+                            ? 'Официальные научные источники и Йельский университет:'
+                            : 'Official Research & Yale University Resources:'}
+                        </Text>
+                        {item.links.map((link, lIdx) => (
+                          <TouchableOpacity
+                            key={lIdx}
+                            style={styles.accordionLinkBtn}
+                            onPress={() => {
+                              triggerHaptic('light');
+                              Linking.openURL(link.url);
+                            }}
+                            activeOpacity={0.7}
+                          >
+                            <Ionicons name="link" size={14} color="#4FD1C5" />
+                            <Text style={styles.accordionLinkText}>
+                              {isRu ? link.titleRu : link.titleEn}
+                            </Text>
+                            <Ionicons
+                              name="open-outline"
+                              size={13}
+                              color="#718096"
+                              style={{ marginLeft: 'auto' }}
+                            />
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
                   </View>
                 )}
               </View>
@@ -925,6 +1014,39 @@ const styles = StyleSheet.create({
     color: '#CBD5E0',
     fontSize: 13,
     lineHeight: 20,
+  },
+  accordionLinksBox: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#1E2636',
+    gap: 8,
+  },
+  accordionLinksTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#8E9BAE',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 2,
+  },
+  accordionLinkBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#161C26',
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#242E3E',
+    gap: 8,
+  },
+  accordionLinkText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#4FD1C5',
+    flex: 1,
+    lineHeight: 16,
   },
 
   // Action Buttons

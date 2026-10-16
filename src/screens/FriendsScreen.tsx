@@ -132,7 +132,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
     if (!user) return;
     triggerHaptic('medium');
     const url = getInviteUrl();
-    const text = `Привет! Я делюсь своим настроением в «Как я?». Давай свяжемся, чтобы чувствовать друг друга и поддерживать: ${url}`;
+    const text = `Вас приглашают в приложение «Как я?» — пространство для осознания чувств и поддержки близких:\n${url}`;
 
     if (Platform.OS === 'web' && typeof navigator !== 'undefined' && (navigator as any).share) {
       try {
@@ -148,13 +148,13 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
     }
 
     if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(text);
       setIsCopiedToast(true);
       setTimeout(() => setIsCopiedToast(false), 3000);
     } else {
       Alert.alert(
-        'Ссылка-приглашение готова!',
-        `Отправьте её вашему партнёру в мессенджере:\n\n${url}`,
+        'Приглашение скопировано!',
+        `Отправьте его вашему близкому человеку в соцсети или мессенджер:\n\n${text}`,
         [{ text: 'Понятно', style: 'default' }]
       );
     }
@@ -731,34 +731,14 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
 
             <View style={styles.chatsListHeaderActions}>
               <TouchableOpacity
-                style={styles.addChatBtn}
-                onPress={() => setIsInviteModalOpen(true)}
+                style={styles.inviteChatHeaderBtn}
+                onPress={handleShareInviteLink}
                 activeOpacity={0.8}
               >
-                <Ionicons name="person-add-outline" size={18} color="#4FD1C5" />
-                <Text style={styles.addChatBtnText}>Добавить</Text>
+                <Ionicons name="share-social" size={16} color="#0A0D12" />
+                <Text style={styles.inviteChatHeaderBtnText}>Пригласить</Text>
               </TouchableOpacity>
             </View>
-          </View>
-
-          {/* Quick Banner: Fast Invite Link */}
-          <View style={styles.quickInviteBanner}>
-            <View style={styles.quickInviteLeft}>
-              <Ionicons name="link-outline" size={20} color="#4FD1C5" />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.quickInviteTitle}>Пригласить в близкий круг</Text>
-                <Text style={styles.quickInviteDesc}>
-                  Код: <Text style={{ color: '#4FD1C5', fontWeight: '700' }}>{user?.inviteCode}</Text> • 1-клик в мессенджеры
-                </Text>
-              </View>
-            </View>
-            <TouchableOpacity
-              style={styles.quickInviteActionBtn}
-              onPress={handleShareInviteLink}
-            >
-              <Ionicons name="share-outline" size={16} color="#0A0D12" />
-              <Text style={styles.quickInviteActionText}>Поделиться</Text>
-            </TouchableOpacity>
           </View>
 
           {/* Section Heading */}
@@ -2063,6 +2043,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+  },
+  inviteChatHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#4FD1C5',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    gap: 6,
+    shadowColor: '#4FD1C5',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+  },
+  inviteChatHeaderBtnText: {
+    color: '#0A0D12',
+    fontSize: 13,
+    fontWeight: '800',
   },
   addChatBtn: {
     flexDirection: 'row',

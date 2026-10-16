@@ -639,11 +639,6 @@ export const TrendsScreen: React.FC<TrendsScreenProps> = ({ checkIns }) => {
             <Text style={styles.cardTitle}>
               {isRu ? 'Карта динамики настроения' : 'Mood Dynamics Area Chart'}
             </Text>
-            <Text style={styles.chartSubtitle}>
-              {isRu
-                ? 'Смягчённый срез чекинов по 4 цветам квадрантов'
-                : 'Smoothed stacked area chart across 4 quadrants'}
-            </Text>
           </View>
         </View>
 
