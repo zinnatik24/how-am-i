@@ -9,6 +9,7 @@ import {
   View,
   Modal,
   Linking,
+  TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -171,7 +172,7 @@ const METHODOLOGY_DATA: MethodologySection[] = [
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onCheckInsUpdated }) => {
   const { language, setLanguage, t } = useLanguage();
-  const { user, isAuthenticated, signInWithGoogle, signInDemo, signOut } = useAuth();
+  const { user, isAuthenticated, signInWithGoogle, signInWithTelegram, signInDemo, signOut } = useAuth();
 
   const isRu = language === 'ru';
 
@@ -189,6 +190,53 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onCheckInsUpdate
   // Copied toast banner
   const [isCopiedToast, setIsCopiedToast] = useState(false);
   const [isDemoModalOpen, setIsDemoModalOpen] = useState(false);
+
+  // Telegram Login State
+  const [isTelegramModalOpen, setIsTelegramModalOpen] = useState(false);
+  const [telegramInput, setTelegramInput] = useState('');
+  const [telegramSubmitting, setTelegramSubmitting] = useState(false);
+
+  const handleTelegramLoginPress = () => {
+    triggerHaptic('medium');
+    // Check if inside Telegram WebApp
+    if (typeof window !== 'undefined' && (window as any).Telegram?.WebApp?.initDataUnsafe?.user) {
+      const tgUser = (window as any).Telegram.WebApp.initDataUnsafe.user;
+      signInWithTelegram({
+        telegramId: tgUser.id,
+        username: tgUser.username,
+        firstName: tgUser.first_name,
+        lastName: tgUser.last_name,
+        photoUrl: tgUser.photo_url,
+      });
+      return;
+    }
+    setTelegramInput('');
+    setIsTelegramModalOpen(true);
+  };
+
+  const handleTelegramSubmit = async () => {
+    const raw = telegramInput.trim();
+    if (!raw) {
+      Alert.alert(
+        isRu ? 'Введите никнейм' : 'Enter username',
+        isRu ? 'Пожалуйста, укажите ваш Telegram @username или имя' : 'Please enter your Telegram @username or name'
+      );
+      return;
+    }
+    triggerHaptic('medium');
+    setTelegramSubmitting(true);
+    try {
+      await signInWithTelegram({
+        username: raw.startsWith('@') ? raw : `@${raw}`,
+        name: raw.replace(/^@/, ''),
+      });
+      setIsTelegramModalOpen(false);
+    } catch (e: any) {
+      Alert.alert(isRu ? 'Ошибка' : 'Error', e.message || 'Не удалось войти');
+    } finally {
+      setTelegramSubmitting(false);
+    }
+  };
 
   const toggleSection = (id: string) => {
     triggerHaptic('light');
@@ -228,15 +276,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onCheckInsUpdate
     const fromName = encodeURIComponent(user.name || 'Близкий человек');
     const url = `${origin}/?invite=${user.inviteCode}&from=${fromName}#friends`;
     const shareText = isRu
-      ? `Привет! Я делюсь настроением в приложении «Как я?». Давай свяжемся: ${url}`
-      : `Hi! I'm sharing my mood in the "How Am I?" app. Connect with me: ${url}`;
+      ? `Привет! Я отмечаю своё состояние в приложении «Как Я?». Давай будем на связи, чтобы бережно делиться тем, как мы себя чувствуем:\n${url}`
+      : `Hi! I'm tracking how I feel in the "How Am I?" app. Let's connect so we can stay close and gently share how we're doing:\n${url}`;
 
     if (Platform.OS === 'web' && typeof navigator !== 'undefined' && (navigator as any).share) {
       try {
         await (navigator as any).share({
-          title: 'Как я? — Близкий круг',
+          title: 'Как Я?',
           text: shareText,
-          url,
         });
         return;
       } catch (e) {
@@ -245,11 +292,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onCheckInsUpdate
     }
 
     if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(shareText);
       setIsCopiedToast(true);
       setTimeout(() => setIsCopiedToast(false), 2500);
     } else {
-      Alert.alert(isRu ? 'Ссылка скопирована' : 'Link copied', url);
+      Alert.alert(isRu ? 'Приглашение скопировано' : 'Invite copied', shareText);
     }
   };
 
@@ -375,6 +422,17 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onCheckInsUpdate
               <Ionicons name="logo-google" size={18} color="#0A0D12" />
               <Text style={styles.googleBtnText}>
                 {isRu ? 'Войти через Google' : 'Sign in with Google'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.telegramBtn}
+              onPress={handleTelegramLoginPress}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="paper-plane" size={18} color="#FFFFFF" />
+              <Text style={styles.telegramBtnText}>
+                {isRu ? 'Войти через Telegram' : 'Sign in with Telegram'}
               </Text>
             </TouchableOpacity>
 
@@ -599,6 +657,66 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onCheckInsUpdate
               activeOpacity={0.8}
             >
               <Text style={styles.modalProfileBtnText}>⚡ Войти как Лиана (liana@example.com)</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Telegram Login Modal */}
+      <Modal
+        visible={isTelegramModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsTelegramModalOpen(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeaderRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View style={styles.telegramIconCircle}>
+                  <Ionicons name="paper-plane" size={16} color="#FFFFFF" />
+                </View>
+                <Text style={styles.modalTitle}>
+                  {isRu ? 'Вход через Telegram' : 'Sign in with Telegram'}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setIsTelegramModalOpen(false)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name="close" size={22} color="#718096" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalSubtitle}>
+              {isRu
+                ? 'Укажите ваш @username или имя в Telegram, чтобы сохранять чекины и быть на связи с близкими.'
+                : 'Enter your Telegram @username or name to sync check-ins and connect with friends.'}
+            </Text>
+
+            <TextInput
+              style={styles.telegramInput}
+              placeholder={isRu ? '@username или Ваше имя' : '@username or Your Name'}
+              placeholderTextColor="#718096"
+              value={telegramInput}
+              onChangeText={setTelegramInput}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="done"
+              onSubmitEditing={handleTelegramSubmit}
+            />
+
+            <TouchableOpacity
+              style={[styles.telegramSubmitBtn, telegramSubmitting && { opacity: 0.6 }]}
+              onPress={handleTelegramSubmit}
+              disabled={telegramSubmitting}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.telegramSubmitBtnText}>
+                {telegramSubmitting
+                  ? (isRu ? 'Вход...' : 'Signing in...')
+                  : (isRu ? 'Войти в аккаунт' : 'Sign In')}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1083,5 +1201,51 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600',
+  },
+  telegramBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2AABEE',
+    borderRadius: 14,
+    paddingVertical: 12,
+    gap: 10,
+    marginTop: 10,
+  },
+  telegramBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  telegramIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#2AABEE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  telegramInput: {
+    backgroundColor: '#0F151C',
+    borderWidth: 1,
+    borderColor: '#2D3748',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    color: '#FFFFFF',
+    fontSize: 15,
+    marginBottom: 16,
+  },
+  telegramSubmitBtn: {
+    backgroundColor: '#2AABEE',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  telegramSubmitBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
   },
 });

@@ -128,6 +128,68 @@ app.post('/api/auth/google', async (req, res) => {
   }
 });
 
+// Telegram auth / registration
+app.post('/api/auth/telegram', async (req, res) => {
+  try {
+    const { telegramId, username, firstName, lastName, photoUrl, name } = req.body;
+    const rawId = telegramId || username;
+    if (!rawId) {
+      return res.status(400).json({ error: 'Укажите telegramId или username' });
+    }
+
+    const cleanUsername = username ? username.replace(/^@/, '').trim() : '';
+    const cleanId = String(rawId).replace(/^@/, '').trim();
+    const googleId = `tg:${cleanId.toLowerCase()}`;
+    const email = `tg_${cleanId.toLowerCase()}@telegram.user`;
+    const displayName = name || [firstName, lastName].filter(Boolean).join(' ') || (cleanUsername ? `@${cleanUsername}` : cleanId);
+    const avatarUrl = photoUrl || null;
+
+    // Check if user exists by google_id or email
+    let userRes = await query('SELECT * FROM users WHERE google_id = $1 OR email = $2', [googleId, email]);
+    let user;
+
+    if (userRes.rows.length === 0) {
+      const inviteCode = generateInviteCode(6);
+      const insertRes = await query(
+        `INSERT INTO users (google_id, email, name, avatar_url, invite_code)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING *`,
+        [googleId, email, displayName, avatarUrl, inviteCode]
+      );
+      user = insertRes.rows[0];
+      console.log(`[AUTH] New Telegram user created: ${user.name} (${user.email}), code: ${user.invite_code}`);
+    } else {
+      user = userRes.rows[0];
+      const updateRes = await query(
+        `UPDATE users
+         SET google_id = COALESCE($1, google_id),
+             name = COALESCE($2, name),
+             avatar_url = COALESCE($3, avatar_url),
+             updated_at = NOW()
+         WHERE id = $4
+         RETURNING *`,
+        [googleId, displayName, avatarUrl, user.id]
+      );
+      user = updateRes.rows[0];
+    }
+
+    const token = signUserToken(user);
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        avatarUrl: user.avatar_url,
+        inviteCode: user.invite_code,
+      },
+    });
+  } catch (err) {
+    console.error('[AUTH] Telegram auth error:', err);
+    res.status(500).json({ error: 'Внутренняя ошибка авторизации через Telegram' });
+  }
+});
+
 // Demo login for quick testing (e.g. "Вася" and "Жена Васи")
 app.post('/api/auth/demo', async (req, res) => {
   try {

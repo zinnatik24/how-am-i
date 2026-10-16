@@ -131,6 +131,24 @@ export async function loginWithDemoApi(name: string, email: string): Promise<{ t
   return data;
 }
 
+// 2b. Telegram Auth
+export async function loginWithTelegramApi(params: {
+  telegramId?: string | number;
+  username?: string;
+  firstName?: string;
+  lastName?: string;
+  photoUrl?: string;
+  name?: string;
+}): Promise<{ token: string; user: UserProfile }> {
+  const data = await apiFetch<{ token: string; user: UserProfile }>('/api/auth/telegram', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+  await setStoredToken(data.token);
+  await setStoredUser(data.user);
+  return data;
+}
+
 // 3. Current User Profile
 export async function fetchMe(): Promise<{ user: UserProfile; partners: PartnerProfile[] }> {
   const data = await apiFetch<{ user: UserProfile; partners: PartnerProfile[] }>('/api/auth/me', {

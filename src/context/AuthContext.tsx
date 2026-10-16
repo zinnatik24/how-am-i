@@ -17,6 +17,7 @@ import {
   removeStoredToken,
   loginWithGoogleApi,
   loginWithDemoApi,
+  loginWithTelegramApi,
   fetchMe,
   registerPushToken,
   connectPartnerApi,
@@ -69,6 +70,14 @@ interface AuthContextType {
   pendingInvite: PendingInvite | null;
   clearPendingInvite: () => void;
   signInWithGoogle: () => Promise<void>;
+  signInWithTelegram: (params: {
+    telegramId?: string | number;
+    username?: string;
+    firstName?: string;
+    lastName?: string;
+    photoUrl?: string;
+    name?: string;
+  }) => Promise<void>;
   signInDemo: (name: string, email: string) => Promise<void>;
   signOut: () => Promise<void>;
   connectPartner: (inviteCode: string) => Promise<{ success: boolean; partner?: PartnerProfile; error?: string }>;
@@ -321,6 +330,39 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  // Telegram Sign-In
+  const signInWithTelegram = async (params: {
+    telegramId?: string | number;
+    username?: string;
+    firstName?: string;
+    lastName?: string;
+    photoUrl?: string;
+    name?: string;
+  }) => {
+    setIsLoading(true);
+    try {
+      const res = await loginWithTelegramApi(params);
+      setToken(res.token);
+      setUser(res.user);
+      const fresh = await fetchMe();
+      setPartners(fresh.partners || []);
+      // Migrate guest session checkins to profile
+      try {
+        const guestRecords = await getCheckIns();
+        if (guestRecords.length > 0) {
+          await syncCheckinsBatchApi(guestRecords);
+        }
+      } catch (e) {
+        console.warn('[AUTH] Could not sync guest records:', e);
+      }
+      Alert.alert('Успешный вход через Telegram!', `Добро пожаловать, ${res.user.name}!`);
+    } catch (err: any) {
+      Alert.alert('Ошибка Telegram входа', err.message || 'Сервер недоступен');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Check for invite code in web URL (?invite=CODE&from=NAME)
   useEffect(() => {
     if (typeof window !== 'undefined' && window.location?.search) {
@@ -515,6 +557,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         pendingInvite,
         clearPendingInvite,
         signInWithGoogle,
+        signInWithTelegram,
         signInDemo,
         signOut,
         connectPartner,

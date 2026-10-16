@@ -74,7 +74,38 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ checkIns, onOpenCheckIn 
         <Text style={styles.heroTitle}>{t('home.greeting')}</Text>
       </View>
 
-      {/* Lone Tactile Check-In Button (Pure Zen Minimalism, No Surrounding Box, No Extra Texts) */}
+      {/* Curated Psychological Quote of the Day (50+ Quotes) */}
+      <View style={styles.quoteCard}>
+        <View style={styles.quoteHeaderRow}>
+          <View style={styles.quoteBadge}>
+            <Ionicons name="bulb-outline" size={14} color="#FBBF24" />
+            <Text style={styles.quoteBadgeText}>
+              {isRu ? 'ЦИТАТА' : 'QUOTE'}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.quoteRefreshBtn}
+            onPress={handleNextQuote}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="refresh" size={15} color="#A0AEC0" />
+            <Text style={styles.quoteRefreshText}>{isRu ? 'Другая цитата' : 'Next quote'}</Text>
+          </TouchableOpacity>
+        </View>
+
+        <Text style={styles.quoteText}>
+          «{isRu ? currentQuote.textRu : currentQuote.textEn}»
+        </Text>
+
+        <View style={styles.quoteAuthorRow}>
+          <View style={styles.quoteAuthorLine} />
+          <Text style={styles.quoteAuthorText}>
+            {isRu ? currentQuote.authorRu : currentQuote.authorEn}
+          </Text>
+        </View>
+      </View>
+
+      {/* Enlarged Tactile Check-In Button (Pure Zen Minimalism) */}
       <View style={styles.loneCheckInContainer}>
         <Animated.View style={{ transform: [{ scale: btnScale }] }}>
           <TouchableOpacity
@@ -85,7 +116,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ checkIns, onOpenCheckIn 
             activeOpacity={0.88}
           >
             <View style={styles.squircleIconBadge}>
-              <Ionicons name="sparkles" size={32} color="#4FD1C5" />
+              <Ionicons name="sparkles" size={36} color="#4FD1C5" />
             </View>
             <Text style={styles.zenSquircleBtnTitle}>
               {isRu ? 'Отметить\nсостояние' : 'Check In\nNow'}
@@ -125,37 +156,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ checkIns, onOpenCheckIn 
           </View>
         )}
       </View>
-
-      {/* Curated Psychological Quote of the Day (50+ Quotes) */}
-      <View style={styles.quoteCard}>
-        <View style={styles.quoteHeaderRow}>
-          <View style={styles.quoteBadge}>
-            <Ionicons name="bulb-outline" size={14} color="#FBBF24" />
-            <Text style={styles.quoteBadgeText}>
-              {isRu ? 'МЫСЛЬ ДНЯ' : 'THOUGHT OF THE DAY'}
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={styles.quoteRefreshBtn}
-            onPress={handleNextQuote}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Ionicons name="refresh" size={15} color="#A0AEC0" />
-            <Text style={styles.quoteRefreshText}>{isRu ? 'Другая мысль' : 'Refresh'}</Text>
-          </TouchableOpacity>
-        </View>
-
-        <Text style={styles.quoteText}>
-          «{isRu ? currentQuote.textRu : currentQuote.textEn}»
-        </Text>
-
-        <View style={styles.quoteAuthorRow}>
-          <View style={styles.quoteAuthorLine} />
-          <Text style={styles.quoteAuthorText}>
-            {isRu ? currentQuote.authorRu : currentQuote.authorEn}
-          </Text>
-        </View>
-      </View>
     </ScrollView>
   );
 };
@@ -182,41 +182,41 @@ const styles = StyleSheet.create({
   loneCheckInContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginVertical: 14,
+    marginVertical: 18,
   },
   zenSquircleButton: {
-    width: 170,
-    height: 170,
+    width: 200,
+    height: 200,
     backgroundColor: '#141A24',
-    borderRadius: 36,
+    borderRadius: 44,
     borderWidth: 1.5,
-    borderColor: 'rgba(79, 209, 197, 0.4)',
+    borderColor: 'rgba(79, 209, 197, 0.45)',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 16,
+    padding: 18,
     shadowColor: '#4FD1C5',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.18,
-    shadowRadius: 18,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.22,
+    shadowRadius: 20,
+    elevation: 8,
   },
   squircleIconBadge: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: 'rgba(79, 209, 197, 0.12)',
     borderWidth: 1,
-    borderColor: 'rgba(79, 209, 197, 0.3)',
+    borderColor: 'rgba(79, 209, 197, 0.35)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
   },
   zenSquircleBtnTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '800',
     color: '#FFFFFF',
     textAlign: 'center',
-    lineHeight: 22,
+    lineHeight: 24,
     letterSpacing: 0.2,
   },
   statsRow: {
@@ -279,7 +279,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#242C3C',
     padding: 18,
-    marginBottom: 24,
+    marginBottom: 6,
   },
   quoteHeaderRow: {
     flexDirection: 'row',

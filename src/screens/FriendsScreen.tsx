@@ -132,14 +132,13 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
     if (!user) return;
     triggerHaptic('medium');
     const url = getInviteUrl();
-    const text = `Вас приглашают в приложение «Как я?» — пространство для осознания чувств и поддержки близких:\n${url}`;
+    const text = `Привет! Я отмечаю своё состояние в приложении «Как Я?». Давай будем на связи, чтобы бережно делиться тем, как мы себя чувствуем:\n${url}`;
 
     if (Platform.OS === 'web' && typeof navigator !== 'undefined' && (navigator as any).share) {
       try {
         await (navigator as any).share({
-          title: 'Приглашение в «Как я?»',
+          title: 'Как Я?',
           text,
-          url,
         });
         return;
       } catch (err) {

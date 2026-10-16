@@ -811,34 +811,6 @@ export const TrendsScreen: React.FC<TrendsScreenProps> = ({ checkIns }) => {
                 );
               })}
             </Svg>
-
-            {/* Quadrants Legend */}
-            <View style={styles.chartLegendRow}>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: '#EF4444' }]} />
-                <Text style={styles.legendText}>
-                  {isRu ? 'Красный' : 'Red'} ({quadrantCounts.high_unpleasant})
-                </Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: '#F59E0B' }]} />
-                <Text style={styles.legendText}>
-                  {isRu ? 'Жёлтый' : 'Yellow'} ({quadrantCounts.high_pleasant})
-                </Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: '#3B82F6' }]} />
-                <Text style={styles.legendText}>
-                  {isRu ? 'Синий' : 'Blue'} ({quadrantCounts.low_unpleasant})
-                </Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: '#10B981' }]} />
-                <Text style={styles.legendText}>
-                  {isRu ? 'Зелёный' : 'Green'} ({quadrantCounts.low_pleasant})
-                </Text>
-              </View>
-            </View>
           </View>
         )}
       </View>

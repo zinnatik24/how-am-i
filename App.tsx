@@ -7,6 +7,7 @@ import {
   Platform,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import Svg, { Line } from 'react-native-svg';
 import {
   SafeAreaProvider,
   SafeAreaView,
@@ -199,96 +200,81 @@ function MainApp() {
         <TouchableOpacity
           style={styles.tabItem}
           onPress={() => handleTabChange('today')}
+          accessibilityLabel={t('tab.today')}
+          activeOpacity={0.75}
         >
-          <Ionicons
-            name={currentTab === 'today' ? 'calendar' : 'calendar-outline'}
-            size={22}
-            color={currentTab === 'today' ? '#4FD1C5' : '#718096'}
-          />
-          <Text
-            style={[
-              styles.tabLabel,
-              currentTab === 'today' && styles.tabLabelActive,
-            ]}
-          >
-            {t('tab.today')}
-          </Text>
+          <Svg width={28} height={28} viewBox="0 0 28 28">
+            <Line
+              x1="3"
+              y1="14"
+              x2="25"
+              y2="14"
+              stroke={currentTab === 'today' ? '#4FD1C5' : '#718096'}
+              strokeWidth={1.8}
+              strokeLinecap="round"
+            />
+            <Line
+              x1="14"
+              y1="6"
+              x2="14"
+              y2="22"
+              stroke={currentTab === 'today' ? '#4FD1C5' : '#718096'}
+              strokeWidth={1.8}
+              strokeLinecap="round"
+            />
+          </Svg>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.tabItem}
           onPress={() => handleTabChange('journal')}
+          accessibilityLabel={t('tab.journal')}
+          activeOpacity={0.75}
         >
           <Ionicons
             name={currentTab === 'journal' ? 'book' : 'book-outline'}
-            size={22}
+            size={25}
             color={currentTab === 'journal' ? '#4FD1C5' : '#718096'}
           />
-          <Text
-            style={[
-              styles.tabLabel,
-              currentTab === 'journal' && styles.tabLabelActive,
-            ]}
-          >
-            {t('tab.journal')}
-          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.tabItem}
           onPress={() => handleTabChange('friends')}
+          accessibilityLabel={t('tab.friends')}
+          activeOpacity={0.75}
         >
           <Ionicons
             name={currentTab === 'friends' ? 'people' : 'people-outline'}
-            size={22}
+            size={25}
             color={currentTab === 'friends' ? '#4FD1C5' : '#718096'}
           />
-          <Text
-            style={[
-              styles.tabLabel,
-              currentTab === 'friends' && styles.tabLabelActive,
-            ]}
-          >
-            {t('tab.friends')}
-          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.tabItem}
           onPress={() => handleTabChange('trends')}
+          accessibilityLabel={t('tab.trends')}
+          activeOpacity={0.75}
         >
           <Ionicons
             name={currentTab === 'trends' ? 'pie-chart' : 'pie-chart-outline'}
-            size={22}
+            size={25}
             color={currentTab === 'trends' ? '#4FD1C5' : '#718096'}
           />
-          <Text
-            style={[
-              styles.tabLabel,
-              currentTab === 'trends' && styles.tabLabelActive,
-            ]}
-          >
-            {t('tab.trends')}
-          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.tabItem}
           onPress={() => handleTabChange('settings')}
+          accessibilityLabel={t('tab.settings')}
+          activeOpacity={0.75}
         >
           <Ionicons
             name={currentTab === 'settings' ? 'settings' : 'settings-outline'}
-            size={22}
+            size={25}
             color={currentTab === 'settings' ? '#4FD1C5' : '#718096'}
           />
-          <Text
-            style={[
-              styles.tabLabel,
-              currentTab === 'settings' && styles.tabLabelActive,
-            ]}
-          >
-            {t('tab.settings')}
-          </Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -330,16 +316,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
-  },
-  tabLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#718096',
-  },
-  tabLabelActive: {
-    color: '#4FD1C5',
-    fontWeight: '700',
+    paddingVertical: 6,
   },
   quickAddButton: {
     width: 48,
