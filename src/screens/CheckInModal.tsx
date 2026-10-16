@@ -224,48 +224,45 @@ export const CheckInModal: React.FC<CheckInModalProps> = ({
               </TouchableOpacity>
             </View>
 
-            {/* Title matching reference screenshot */}
+            {/* Editorial Title & Subtitle */}
             <View style={styles.quadrantsTitleWrap}>
               <Text style={styles.quadrantsSerifTitle}>
                 {language === 'ru'
-                  ? 'Выберите цвет, который лучше всего описывает ваше состояние прямо сейчас'
-                  : 'Tap the color that best describes how you feel right now'}
+                  ? 'Выберите сектор вашего состояния'
+                  : 'Select your emotional quadrant'}
+              </Text>
+              <Text style={styles.quadrantsSub}>
+                {language === 'ru'
+                  ? 'Прислушайтесь к телу: какая энергия и насколько приятно вы себя ощущаете?'
+                  : 'Tune into your body: check in with your energy and pleasantness'}
               </Text>
             </View>
 
-            {/* 2x2 Soft-pulsing Quadrant Blobs */}
+            {/* Spacious 2x2 Quadrants Grid (Clean, zero overlap) */}
             <View style={styles.quadrantsGridContainer}>
-              <View style={styles.quadrantsCluster}>
-                {/* Row 1: High energy (Red | Yellow) */}
-                <View style={styles.quadrantsRow}>
-                  <View style={styles.quadrantCircleWrapper}>
-                    <QuadrantCircle
-                      quadrant={QUADRANTS['high_unpleasant']}
-                      onPress={() => handleSelectQuadrant('high_unpleasant')}
-                    />
-                  </View>
-                  <View style={styles.quadrantCircleWrapper}>
-                    <QuadrantCircle
-                      quadrant={QUADRANTS['high_pleasant']}
-                      onPress={() => handleSelectQuadrant('high_pleasant')}
-                    />
-                  </View>
+              <View style={styles.quadrants2x2Grid}>
+                {/* Top Row: High Energy (Red | Yellow) */}
+                <View style={styles.quadrantsGridRow}>
+                  <QuadrantCircle
+                    quadrant={QUADRANTS['high_unpleasant']}
+                    onPress={() => handleSelectQuadrant('high_unpleasant')}
+                  />
+                  <QuadrantCircle
+                    quadrant={QUADRANTS['high_pleasant']}
+                    onPress={() => handleSelectQuadrant('high_pleasant')}
+                  />
                 </View>
 
-                {/* Row 2: Low energy (Blue | Green) */}
-                <View style={styles.quadrantsRow}>
-                  <View style={styles.quadrantCircleWrapper}>
-                    <QuadrantCircle
-                      quadrant={QUADRANTS['low_unpleasant']}
-                      onPress={() => handleSelectQuadrant('low_unpleasant')}
-                    />
-                  </View>
-                  <View style={styles.quadrantCircleWrapper}>
-                    <QuadrantCircle
-                      quadrant={QUADRANTS['low_pleasant']}
-                      onPress={() => handleSelectQuadrant('low_pleasant')}
-                    />
-                  </View>
+                {/* Bottom Row: Low Energy (Blue | Green) */}
+                <View style={styles.quadrantsGridRow}>
+                  <QuadrantCircle
+                    quadrant={QUADRANTS['low_unpleasant']}
+                    onPress={() => handleSelectQuadrant('low_unpleasant')}
+                  />
+                  <QuadrantCircle
+                    quadrant={QUADRANTS['low_pleasant']}
+                    onPress={() => handleSelectQuadrant('low_pleasant')}
+                  />
                 </View>
               </View>
             </View>
@@ -553,44 +550,43 @@ const styles = StyleSheet.create({
   },
   quadrantsTitleWrap: {
     paddingHorizontal: 24,
-    marginTop: 18,
-    marginBottom: 8,
+    marginTop: 20,
+    marginBottom: 16,
     alignItems: 'center',
   },
   quadrantsSerifTitle: {
     color: '#FFFFFF',
-    fontSize: 27,
+    fontSize: 24,
     fontWeight: '700',
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
     textAlign: 'center',
-    lineHeight: 35,
-    letterSpacing: -0.3,
+    lineHeight: 32,
+    letterSpacing: -0.4,
+  },
+  quadrantsSub: {
+    color: '#8C9BAE',
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 6,
+    lineHeight: 18,
+    maxWidth: 320,
   },
   quadrantsGridContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 10,
+    paddingBottom: 24,
   },
-  quadrantsCluster: {
+  quadrants2x2Grid: {
     width: '100%',
-    maxWidth: 360,
-    aspectRatio: 1,
-    justifyContent: 'center',
+    maxWidth: 380,
+    gap: 14,
   },
-  quadrantsRow: {
-    flex: 1,
+  quadrantsGridRow: {
     flexDirection: 'row',
+    gap: 14,
     justifyContent: 'center',
-    alignItems: 'center',
-  },
-  quadrantCircleWrapper: {
-    flex: 1,
-    aspectRatio: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    margin: -4,
   },
   detailsContainer: {
     flex: 1,

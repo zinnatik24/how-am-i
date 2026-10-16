@@ -1469,37 +1469,33 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
               contentContainerStyle={styles.shareModalContent}
               showsVerticalScrollIndicator={false}
             >
-              {/* TOP: RADIANT CIRCULAR BUTTON «ОТМЕТИТЬ СОСТОЯНИЕ» (КАК НА ГЛАВНОМ ЭКРАНЕ) */}
-              <View style={styles.shareHeroWrapper}>
-                <View style={styles.radiantWaveOuter} />
-                <View style={styles.radiantWaveMid} />
-                <View style={styles.radiantWaveInner} />
+              {/* TOP: ZEN ACTION CARD «ОТМЕТИТЬ СОСТОЯНИЕ» */}
+              <View style={styles.shareZenCard}>
+                <View style={styles.shareZenHeader}>
+                  <Text style={styles.shareZenTitle}>Отметить состояние прямо сейчас</Text>
+                  <Text style={styles.shareZenSub}>Выберите чувства на карте и отправьте в диалог</Text>
+                </View>
+
+                {/* 4-Color Spectrum Bar */}
+                <View style={styles.shareZenSpectrumRow}>
+                  <View style={[styles.shareZenPill, { backgroundColor: '#FF5252' }]} />
+                  <View style={[styles.shareZenPill, { backgroundColor: '#FBBF24' }]} />
+                  <View style={[styles.shareZenPill, { backgroundColor: '#3B82F6' }]} />
+                  <View style={[styles.shareZenPill, { backgroundColor: '#10B981' }]} />
+                </View>
 
                 <TouchableOpacity
-                  activeOpacity={0.85}
+                  activeOpacity={0.88}
                   onPress={() => {
                     setIsShareModalOpen(false);
                     handleOpenRealCheckIn();
                   }}
-                  style={styles.radiantOrbButton}
+                  style={styles.shareZenActionButton}
                 >
-                  <View style={styles.radiantOrbMesh}>
-                    <View style={[styles.orbGlowQuarter, { backgroundColor: '#FB7185', top: -10, left: -10 }]} />
-                    <View style={[styles.orbGlowQuarter, { backgroundColor: '#FBBF24', top: -10, right: -10 }]} />
-                    <View style={[styles.orbGlowQuarter, { backgroundColor: '#38BDF8', bottom: -10, left: -10 }]} />
-                    <View style={[styles.orbGlowQuarter, { backgroundColor: '#4ADE80', bottom: -10, right: -10 }]} />
-                  </View>
-
-                  <View style={styles.radiantOrbCore}>
-                    <Ionicons name="sparkles" size={24} color="#FFFFFF" style={{ marginBottom: 4 }} />
-                    <Text style={styles.radiantOrbTitle}>Отметить</Text>
-                    <Text style={styles.radiantOrbSub}>состояние</Text>
-                  </View>
+                  <Ionicons name="sparkles" size={16} color="#0A0D12" />
+                  <Text style={styles.shareZenActionBtnText}>Открыть карту чувств</Text>
+                  <Ionicons name="arrow-forward" size={16} color="#0A0D12" />
                 </TouchableOpacity>
-
-                <Text style={styles.shareHeroCaption}>
-                  Прикоснитесь, чтобы выбрать чувства на карте
-                </Text>
               </View>
 
               {/* BOTTOM: 3 ПОСЛЕДНИХ ЧЕКИНА */}
@@ -2941,14 +2937,53 @@ const styles = StyleSheet.create({
     color: '#E2E8F0',
     fontSize: 11,
     fontWeight: '600',
-    opacity: 0.9,
   },
-  shareHeroCaption: {
+  shareZenCard: {
+    backgroundColor: '#121620',
+    borderWidth: 1.5,
+    borderColor: '#1E2532',
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 16,
+  },
+  shareZenHeader: {
+    marginBottom: 12,
+  },
+  shareZenTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  shareZenSub: {
     color: '#8E9BAE',
     fontSize: 12,
-    textAlign: 'center',
-    marginTop: 14,
-    fontWeight: '500',
+    marginTop: 3,
+  },
+  shareZenSpectrumRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 14,
+  },
+  shareZenPill: {
+    flex: 1,
+    height: 4,
+    borderRadius: 2,
+    opacity: 0.85,
+  },
+  shareZenActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  shareZenActionBtnText: {
+    color: '#0A0D12',
+    fontSize: 14,
+    fontWeight: '700',
   },
 
   // Recent Checkins in Share Modal

@@ -44,42 +44,57 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ checkIns, onOpenCheckIn 
         <Text style={styles.heroSubtitle}>{t('home.subtitle')}</Text>
       </View>
 
-      {/* Radiant Circular Check-In Orb with Soft Waves of Light */}
-      <View style={styles.radiantHeroWrapper}>
-        <View style={styles.radiantWaveOuter} />
-        <View style={styles.radiantWaveMid} />
-        <View style={styles.radiantWaveInner} />
+      {/* Zen Check-In Hero Card (Quiet Luxury) */}
+      <View style={styles.zenHeroCard}>
+        <View style={styles.zenCardHeader}>
+          <View style={styles.zenEyebrowRow}>
+            <View style={styles.zenPulseDot} />
+            <Text style={styles.zenEyebrow}>
+              {language === 'ru' ? 'ВАШЕ САМОЧУВСТВИЕ' : 'DAILY MINDFULNESS'}
+            </Text>
+          </View>
+          <Text style={styles.zenCardTitle}>
+            {language === 'ru'
+              ? 'Как ваше самочувствие прямо сейчас?'
+              : 'How are you feeling right now?'}
+          </Text>
+          <Text style={styles.zenCardSub}>
+            {language === 'ru'
+              ? 'Сделайте паузу, прислушайтесь к телу и отметьте чувства на карте'
+              : 'Take a mindful pause and map your emotions'}
+          </Text>
+        </View>
 
+        {/* 4-Color Ambient Spectrum Bar */}
+        <View style={styles.zenSpectrumRow}>
+          <View style={[styles.zenSpectrumPill, { backgroundColor: '#FF5252' }]}>
+            <Text style={styles.zenSpectrumPillText}>{language === 'ru' ? 'Стресс' : 'High'}</Text>
+          </View>
+          <View style={[styles.zenSpectrumPill, { backgroundColor: '#FBBF24' }]}>
+            <Text style={styles.zenSpectrumPillText}>{language === 'ru' ? 'Драйв' : 'Joy'}</Text>
+          </View>
+          <View style={[styles.zenSpectrumPill, { backgroundColor: '#3B82F6' }]}>
+            <Text style={styles.zenSpectrumPillText}>{language === 'ru' ? 'Усталость' : 'Low'}</Text>
+          </View>
+          <View style={[styles.zenSpectrumPill, { backgroundColor: '#10B981' }]}>
+            <Text style={styles.zenSpectrumPillText}>{language === 'ru' ? 'Покой' : 'Calm'}</Text>
+          </View>
+        </View>
+
+        {/* Tactile Action Button */}
         <TouchableOpacity
-          activeOpacity={0.85}
+          style={styles.zenActionButton}
           onPress={handleStartCheckIn}
-          style={styles.radiantOrbButton}
+          activeOpacity={0.88}
         >
-          {/* Subtle multi-quadrant ambient aura background */}
-          <View style={styles.radiantOrbMesh}>
-            <View style={[styles.orbGlowQuarter, { backgroundColor: '#FB7185', top: -10, left: -10 }]} />
-            <View style={[styles.orbGlowQuarter, { backgroundColor: '#FBBF24', top: -10, right: -10 }]} />
-            <View style={[styles.orbGlowQuarter, { backgroundColor: '#38BDF8', bottom: -10, left: -10 }]} />
-            <View style={[styles.orbGlowQuarter, { backgroundColor: '#4ADE80', bottom: -10, right: -10 }]} />
+          <View style={styles.zenBtnSparkle}>
+            <Ionicons name="sparkles" size={17} color="#0A0D12" />
           </View>
-
-          {/* Frosted Glass Core with Icon & Text */}
-          <View style={styles.radiantOrbCore}>
-            <Ionicons name="sparkles" size={26} color="#FFFFFF" style={{ marginBottom: 4 }} />
-            <Text style={styles.radiantOrbTitle}>
-              {language === 'ru' ? 'Отметить' : 'Check In'}
-            </Text>
-            <Text style={styles.radiantOrbSub}>
-              {language === 'ru' ? 'состояние' : 'now'}
-            </Text>
-          </View>
+          <Text style={styles.zenActionBtnText}>
+            {language === 'ru' ? 'Отметить состояние' : 'Check In Now'}
+          </Text>
+          <Ionicons name="arrow-forward" size={17} color="#0A0D12" />
         </TouchableOpacity>
-
-        <Text style={styles.radiantPromptCaption}>
-          {language === 'ru'
-            ? 'Прикоснитесь, чтобы прислушаться к себе'
-            : 'Tap the sphere to check in with yourself'}
-        </Text>
       </View>
 
       {/* Stats Cards */}
@@ -255,96 +270,99 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
   },
-  radiantHeroWrapper: {
-    alignItems: 'center',
-    justifyContent: 'center',
+  zenHeroCard: {
+    backgroundColor: '#121620',
+    borderWidth: 1.5,
+    borderColor: '#1E2532',
+    borderRadius: 24,
+    padding: 22,
     marginVertical: 14,
-    position: 'relative',
-    height: 270,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    elevation: 6,
   },
-  radiantWaveOuter: {
-    position: 'absolute',
-    width: 260,
-    height: 260,
-    borderRadius: 130,
-    borderWidth: 1,
-    borderColor: 'rgba(79, 209, 197, 0.12)',
-    backgroundColor: 'rgba(79, 209, 197, 0.02)',
+  zenCardHeader: {
+    marginBottom: 16,
   },
-  radiantWaveMid: {
-    position: 'absolute',
-    width: 210,
-    height: 210,
-    borderRadius: 105,
-    borderWidth: 1.5,
-    borderColor: 'rgba(251, 191, 36, 0.18)',
-    backgroundColor: 'rgba(251, 191, 36, 0.03)',
-  },
-  radiantWaveInner: {
-    position: 'absolute',
-    width: 165,
-    height: 165,
-    borderRadius: 82.5,
-    borderWidth: 1.5,
-    borderColor: 'rgba(74, 222, 128, 0.28)',
-    backgroundColor: 'rgba(74, 222, 128, 0.05)',
-  },
-  radiantOrbButton: {
-    width: 136,
-    height: 136,
-    borderRadius: 68,
-    overflow: 'hidden',
-    position: 'relative',
-    justifyContent: 'center',
+  zenEyebrowRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.35)',
-    shadowColor: '#4FD1C5',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 20,
-    elevation: 10,
+    gap: 7,
+    marginBottom: 6,
   },
-  radiantOrbMesh: {
-    position: 'absolute',
-    width: 136,
-    height: 136,
-    opacity: 0.75,
+  zenPulseDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#4FD1C5',
   },
-  orbGlowQuarter: {
-    position: 'absolute',
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    opacity: 0.8,
-  },
-  radiantOrbCore: {
-    width: 128,
-    height: 128,
-    borderRadius: 64,
-    backgroundColor: 'rgba(10, 13, 18, 0.72)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  radiantOrbTitle: {
-    color: '#FFFFFF',
-    fontSize: 16,
+  zenEyebrow: {
+    color: '#4FD1C5',
+    fontSize: 11,
     fontWeight: '800',
-    letterSpacing: 0.2,
+    letterSpacing: 0.8,
   },
-  radiantOrbSub: {
-    color: '#CBD5E0',
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 1,
+  zenCardTitle: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '700',
+    letterSpacing: -0.4,
+    lineHeight: 28,
   },
-  radiantPromptCaption: {
-    position: 'absolute',
-    bottom: 0,
-    color: '#718096',
-    fontSize: 12,
-    fontWeight: '500',
-    letterSpacing: 0.3,
+  zenCardSub: {
+    color: '#8C9BAE',
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 6,
+  },
+  zenSpectrumRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 18,
+  },
+  zenSpectrumPill: {
+    flex: 1,
+    paddingVertical: 7,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: 0.9,
+  },
+  zenSpectrumPillText: {
+    color: '#0A0D12',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  zenActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    paddingVertical: 14,
+    gap: 10,
+    shadowColor: '#FFFFFF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  zenBtnSparkle: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zenActionBtnText: {
+    color: '#0A0D12',
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: -0.2,
   },
   heroMoodOrbWrap: {
     shadowColor: '#FBBF24',

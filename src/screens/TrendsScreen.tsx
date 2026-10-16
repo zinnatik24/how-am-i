@@ -43,7 +43,7 @@ interface TimeBucket {
 }
 
 // Cubic Bézier spline helper for buttery smooth curves
-function getCubicSplinePath(points: { x: number; y: number }[]): string {
+function getCubicSplinePath(points: { x: number; y: number }[], baselineY?: number): string {
   if (points.length === 0) return '';
   if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
   let d = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
@@ -55,10 +55,20 @@ function getCubicSplinePath(points: { x: number; y: number }[]): string {
     const p2 = points[i + 1];
     const p3 = i < points.length - 2 ? points[i + 2] : p2;
 
-    const cp1x = p1.x + (p2.x - p0.x) * tension;
-    const cp1y = p1.y + (p2.y - p0.y) * tension;
-    const cp2x = p2.x - (p3.x - p1.x) * tension;
-    const cp2y = p2.y - (p3.y - p1.y) * tension;
+    let cp1x = p1.x + (p2.x - p0.x) * tension;
+    let cp1y = p1.y + (p2.y - p0.y) * tension;
+    let cp2x = p2.x - (p3.x - p1.x) * tension;
+    let cp2y = p2.y - (p3.y - p1.y) * tension;
+
+    if (baselineY !== undefined) {
+      if (Math.abs(p1.y - baselineY) < 0.5 && Math.abs(p2.y - baselineY) < 0.5) {
+        cp1y = baselineY;
+        cp2y = baselineY;
+      } else {
+        cp1y = Math.min(baselineY, cp1y);
+        cp2y = Math.min(baselineY, cp2y);
+      }
+    }
 
     d += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
   }
@@ -68,10 +78,11 @@ function getCubicSplinePath(points: { x: number; y: number }[]): string {
 // Build closed polygon path between top and bottom curve
 function buildStackedAreaPath(
   topPoints: { x: number; y: number }[],
-  bottomPoints: { x: number; y: number }[]
+  bottomPoints: { x: number; y: number }[],
+  baselineY?: number
 ): string {
   if (topPoints.length === 0 || bottomPoints.length === 0) return '';
-  const topPath = getCubicSplinePath(topPoints);
+  const topPath = getCubicSplinePath(topPoints, baselineY);
   const reversedBottom = [...bottomPoints].reverse();
 
   let bottomPath = '';
@@ -82,10 +93,20 @@ function buildStackedAreaPath(
     const p2 = reversedBottom[i + 1];
     const p3 = i < reversedBottom.length - 2 ? reversedBottom[i + 2] : p2;
 
-    const cp1x = p1.x + (p2.x - p0.x) * tension;
-    const cp1y = p1.y + (p2.y - p0.y) * tension;
-    const cp2x = p2.x - (p3.x - p1.x) * tension;
-    const cp2y = p2.y - (p3.y - p1.y) * tension;
+    let cp1x = p1.x + (p2.x - p0.x) * tension;
+    let cp1y = p1.y + (p2.y - p0.y) * tension;
+    let cp2x = p2.x - (p3.x - p1.x) * tension;
+    let cp2y = p2.y - (p3.y - p1.y) * tension;
+
+    if (baselineY !== undefined) {
+      if (Math.abs(p1.y - baselineY) < 0.5 && Math.abs(p2.y - baselineY) < 0.5) {
+        cp1y = baselineY;
+        cp2y = baselineY;
+      } else {
+        cp1y = Math.min(baselineY, cp1y);
+        cp2y = Math.min(baselineY, cp2y);
+      }
+    }
 
     bottomPath += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
   }
@@ -407,14 +428,14 @@ export const TrendsScreen: React.FC<TrendsScreenProps> = ({ checkIns }) => {
 
     return {
       maxVal,
-      greenArea: buildStackedAreaPath(greenPoints, basePoints),
-      blueArea: buildStackedAreaPath(bluePoints, greenPoints),
-      yellowArea: buildStackedAreaPath(yellowPoints, bluePoints),
-      redArea: buildStackedAreaPath(redPoints, yellowPoints),
-      greenLine: getCubicSplinePath(greenPoints),
-      blueLine: getCubicSplinePath(bluePoints),
-      yellowLine: getCubicSplinePath(yellowPoints),
-      redLine: getCubicSplinePath(redPoints),
+      greenArea: buildStackedAreaPath(greenPoints, basePoints, baselineY),
+      blueArea: buildStackedAreaPath(bluePoints, greenPoints, baselineY),
+      yellowArea: buildStackedAreaPath(yellowPoints, bluePoints, baselineY),
+      redArea: buildStackedAreaPath(redPoints, yellowPoints, baselineY),
+      greenLine: getCubicSplinePath(greenPoints, baselineY),
+      blueLine: getCubicSplinePath(bluePoints, baselineY),
+      yellowLine: getCubicSplinePath(yellowPoints, baselineY),
+      redLine: getCubicSplinePath(redPoints, baselineY),
       topPoints: redPoints,
     };
   }, [buckets, baselineY, plotHeight, plotWidth, paddingLeft]);
