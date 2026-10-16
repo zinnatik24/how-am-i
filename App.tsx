@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import {
-  SafeAreaView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -8,7 +7,11 @@ import {
   Platform,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import {
+  SafeAreaProvider,
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LanguageProvider, useLanguage } from './src/i18n/LanguageContext';
@@ -29,6 +32,7 @@ type TabKey = 'today' | 'journal' | 'friends' | 'trends' | 'settings';
 function MainApp() {
   const { t } = useLanguage();
   const { user, isAuthenticated, refreshFeed, broadcastCheckinToChat } = useAuth();
+  const insets = useSafeAreaInsets();
   const [currentTab, setCurrentTab] = useState<TabKey>('today');
   const [checkIns, setCheckIns] = useState<CheckInRecord[]>([]);
   const [isCheckInOpen, setIsCheckInOpen] = useState<boolean>(false);
@@ -140,7 +144,7 @@ function MainApp() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <StatusBar style="light" />
 
       {/* Screen Body */}
@@ -177,7 +181,21 @@ function MainApp() {
       />
 
       {/* Bottom Tab Bar */}
-      <View style={styles.tabBar}>
+      <View
+        nativeID="bottom-tab-bar"
+        accessibilityRole="navigation"
+        style={[
+          styles.tabBar,
+          {
+            paddingBottom: Platform.select({
+              ios: Math.max(14, insets.bottom + 6),
+              android: Math.max(10, insets.bottom + 6),
+              web: Math.max(14, (insets.bottom || 0) + 6),
+              default: 14,
+            }),
+          },
+        ]}
+      >
         <TouchableOpacity
           style={styles.tabItem}
           onPress={() => handleTabChange('today')}
@@ -304,7 +322,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#11151C',
     borderTopWidth: 1,
     borderTopColor: '#1A202C',
-    paddingVertical: 10,
+    paddingTop: 10,
+    paddingBottom: 14,
     paddingHorizontal: 8,
   },
   tabItem: {
