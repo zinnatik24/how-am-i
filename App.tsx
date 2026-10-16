@@ -10,10 +10,12 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LanguageProvider, useLanguage } from './src/i18n/LanguageContext';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { CheckInRecord } from './src/types';
-import { getCheckIns, seedSampleData } from './src/storage/checkInStorage';
+import { getCheckIns } from './src/storage/checkInStorage';
+import { fetchUserCheckinsApi } from './src/services/api';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { JournalScreen } from './src/screens/JournalScreen';
 import { FriendsScreen } from './src/screens/FriendsScreen';
@@ -26,7 +28,7 @@ type TabKey = 'today' | 'journal' | 'friends' | 'trends' | 'settings';
 
 function MainApp() {
   const { t } = useLanguage();
-  const { refreshFeed, broadcastCheckinToChat } = useAuth();
+  const { user, isAuthenticated, refreshFeed, broadcastCheckinToChat } = useAuth();
   const [currentTab, setCurrentTab] = useState<TabKey>('today');
   const [checkIns, setCheckIns] = useState<CheckInRecord[]>([]);
   const [isCheckInOpen, setIsCheckInOpen] = useState<boolean>(false);
@@ -45,6 +47,54 @@ function MainApp() {
     }
     loadData();
   }, []);
+
+  // When user is authenticated, sync check-ins from cloud to ensure complete history
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      fetchUserCheckinsApi().then((cloudItems) => {
+        if (cloudItems && cloudItems.length > 0) {
+          setCheckIns((prev) => {
+            const cloudRecords: CheckInRecord[] = cloudItems.map((c) => ({
+              id: c.local_id || c.id,
+              timestamp: c.created_at,
+              emotionId: c.emotion_id,
+              emotionName: c.emotion_name_ru || c.emotion_id,
+              quadrantId: c.quadrant,
+              energy: c.energy,
+              pleasantness: c.pleasantness,
+              intensity: c.intensity || 2,
+              emotions: c.emotions && c.emotions.length > 0
+                ? c.emotions
+                : [
+                    {
+                      id: c.emotion_id,
+                      name: c.emotion_name_ru || c.emotion_id,
+                      quadrantId: c.quadrant,
+                      intensity: c.intensity || 2,
+                    },
+                  ],
+              context: {
+                people: Array.isArray(c.context_people) ? c.context_people : [],
+                location: Array.isArray(c.context_place) ? c.context_place : [],
+                activity: Array.isArray(c.context_activity) ? c.context_activity : [],
+              },
+              note: c.note || '',
+            }));
+
+            const existingIds = new Set(prev.map((r) => r.id));
+            const newFromCloud = cloudRecords.filter((r) => !existingIds.has(r.id));
+            if (newFromCloud.length === 0) return prev;
+
+            const merged = [...newFromCloud, ...prev].sort(
+              (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+            );
+            AsyncStorage.setItem('@how_we_feel_checkins_v1', JSON.stringify(merged)).catch(() => {});
+            return merged;
+          });
+        }
+      }).catch((e) => console.log('[APP] Cloud checkins fetch skip:', e));
+    }
+  }, [isAuthenticated, user?.id]);
 
   // Sync tab with URL hash on Web (#today, #friends, #journal, etc.)
   useEffect(() => {

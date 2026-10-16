@@ -27,7 +27,9 @@ import {
   fetchConversationsApi,
   sendPartnerPingApi,
   sendPartnerReactionApi,
+  syncCheckinsBatchApi,
 } from '../services/api';
+import { getCheckIns } from '../storage/checkInStorage';
 import {
   getGoogleClientId,
   setGoogleClientId,
@@ -150,6 +152,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           setUser(res.user);
           const fresh = await fetchMe();
           setPartners(fresh.partners || []);
+          // Migrate guest session checkins to profile
+          try {
+            const guestRecords = await getCheckIns();
+            if (guestRecords.length > 0) {
+              await syncCheckinsBatchApi(guestRecords);
+            }
+          } catch (e) {
+            console.warn('[AUTH] Could not sync guest records:', e);
+          }
           Alert.alert('Успешный вход!', `Добро пожаловать, ${res.user.name}!`);
         })
         .catch((err: any) => {
@@ -293,6 +304,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setUser(res.user);
       const fresh = await fetchMe();
       setPartners(fresh.partners || []);
+      // Migrate guest session checkins to profile
+      try {
+        const guestRecords = await getCheckIns();
+        if (guestRecords.length > 0) {
+          await syncCheckinsBatchApi(guestRecords);
+        }
+      } catch (e) {
+        console.warn('[AUTH] Could not sync guest records:', e);
+      }
       Alert.alert('Успешный вход!', `Добро пожаловать, ${res.user.name}!\nВаш код приглашения: ${res.user.inviteCode}`);
     } catch (err: any) {
       Alert.alert('Ошибка входа', err.message || 'Сервер недоступен');

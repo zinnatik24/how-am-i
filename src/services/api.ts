@@ -190,6 +190,46 @@ export async function saveCheckinToCloud(payload: {
   }
 }
 
+// 6b. Fetch Authenticated User's Check-ins from Cloud
+export async function fetchUserCheckinsApi(): Promise<any[]> {
+  try {
+    const data = await apiFetch<{ checkins: any[] }>('/api/checkins?limit=200', {
+      method: 'GET',
+    });
+    return data.checkins || [];
+  } catch (err) {
+    console.warn('[API] Could not fetch user checkins:', err);
+    return [];
+  }
+}
+
+// 6c. Batch Sync Guest Check-ins to Cloud on Login/Signup
+export async function syncCheckinsBatchApi(checkins: any[]): Promise<{ count: number }> {
+  try {
+    const res = await apiFetch<{ success: boolean; count: number }>('/api/checkins/sync-batch', {
+      method: 'POST',
+      body: JSON.stringify({ checkins }),
+    });
+    return { count: res.count || 0 };
+  } catch (err) {
+    console.warn('[API] Could not batch sync checkins:', err);
+    return { count: 0 };
+  }
+}
+
+// 6d. Soft Delete Check-in on Cloud
+export async function softDeleteCheckInApi(id: string): Promise<boolean> {
+  try {
+    await apiFetch(`/api/checkins/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+    return true;
+  } catch (err) {
+    console.warn('[API] Could not soft delete checkin on cloud:', err);
+    return false;
+  }
+}
+
 // 7. Get Partner's Live Mood Feed
 export async function fetchPartnerFeed(): Promise<CloudCheckin[]> {
   try {

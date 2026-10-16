@@ -71,8 +71,6 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
   const [lastSentBanner, setLastSentBanner] = useState<string | null>(null);
   const [isCopiedToast, setIsCopiedToast] = useState<boolean>(false);
 
-  // Settings / Partner Info Modal
-  const [isInfoModalOpen, setIsInfoModalOpen] = useState<boolean>(false);
 
   // Add Partner / Invite Modal
   const [isInviteModalOpen, setIsInviteModalOpen] = useState<boolean>(false);
@@ -611,21 +609,6 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
               <Text style={styles.headerTitle}>Близкие</Text>
               <Text style={styles.headerSubtitle}>Пригласите партнёра для начала общения</Text>
             </View>
-            {user && (
-              <TouchableOpacity
-                style={styles.profilePill}
-                onPress={() => setIsInfoModalOpen(true)}
-              >
-                <View style={styles.profileAvatarMini}>
-                  <Text style={styles.profileAvatarMiniText}>
-                    {user.name ? user.name.charAt(0).toUpperCase() : 'Я'}
-                  </Text>
-                </View>
-                <Text style={styles.profilePillName} numberOfLines={1}>
-                  {user.name.split(' ')[0]}
-                </Text>
-              </TouchableOpacity>
-            )}
           </View>
 
           {/* Incoming Invite Banner if user opened through invite link */}
@@ -755,18 +738,6 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
                 <Ionicons name="person-add-outline" size={18} color="#4FD1C5" />
                 <Text style={styles.addChatBtnText}>Добавить</Text>
               </TouchableOpacity>
-
-              {user && (
-                <TouchableOpacity
-                  style={styles.profileAvatarButton}
-                  onPress={() => setIsInfoModalOpen(true)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.profileAvatarButtonText}>
-                    {user.name ? user.name.charAt(0).toUpperCase() : 'Я'}
-                  </Text>
-                </TouchableOpacity>
-              )}
             </View>
           </View>
 
@@ -1216,10 +1187,12 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
 
                             {isCardExpanded && (
                               <View style={styles.insightExpandedBox}>
-                                {/* Coherent synthesis narrative */}
-                                <Text style={styles.insightNarrativeText}>
-                                  {insight.narrative}
-                                </Text>
+                                {/* Coherent synthesis narrative (only when 2+ emotions) */}
+                                {Boolean(insight.narrative) && (
+                                  <Text style={styles.insightNarrativeText}>
+                                    {insight.narrative}
+                                  </Text>
+                                )}
 
                                 {/* Detailed breakdowns for each emotion */}
                                 <View style={styles.insightItemsList}>
@@ -1668,62 +1641,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
         </View>
       </Modal>
 
-      {/* 6. MODAL: PROFILE & SETTINGS */}
-      <Modal
-        visible={isInfoModalOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setIsInfoModalOpen(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>Профиль и настройки</Text>
-              <TouchableOpacity onPress={() => setIsInfoModalOpen(false)}>
-                <Ionicons name="close" size={22} color="#A0AEC0" />
-              </TouchableOpacity>
-            </View>
 
-            {user && (
-              <View style={styles.modalUserBox}>
-                <Text style={styles.modalUserLabel}>Вы вошли как:</Text>
-                <Text style={styles.modalUserName}>{user.name}</Text>
-                <Text style={styles.modalUserEmail}>{user.email}</Text>
-
-                <TouchableOpacity
-                  style={styles.modalCopyInviteBtn}
-                  onPress={handleShareInviteLink}
-                >
-                  <Ionicons name="share-social-outline" size={16} color="#4FD1C5" />
-                  <Text style={styles.modalCopyInviteBtnText}>Поделиться инвайт-ссылкой</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.modalCopyCodeBtn}
-                  onPress={handleCopyCodeOnly}
-                >
-                  <Text style={styles.modalCopyCodeBtnText}>
-                    Код: <Text style={{ color: '#4FD1C5', fontWeight: '800' }}>{user.inviteCode}</Text>
-                  </Text>
-                  <Ionicons name="copy-outline" size={14} color="#A0AEC0" />
-                </TouchableOpacity>
-              </View>
-            )}
-
-            <TouchableOpacity
-              style={styles.modalSignOutBtn}
-              onPress={() => {
-                setIsInfoModalOpen(false);
-                setSelectedPartner(null);
-                signOut();
-              }}
-            >
-              <Ionicons name="log-out-outline" size={18} color="#FC8181" />
-              <Text style={styles.modalSignOutBtnText}>Выйти из аккаунта</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
 
       {/* 7. MODAL: DEMO LOGIN */}
       <Modal

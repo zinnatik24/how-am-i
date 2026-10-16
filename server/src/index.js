@@ -351,9 +351,9 @@ app.post('/api/checkins', authMiddleware, async (req, res) => {
     const insertRes = await query(
       `INSERT INTO checkins (
          user_id, local_id, emotion_id, energy, pleasantness, intensity, quadrant,
-         context_people, context_place, context_activity, note, share_with_partners, created_at
+         context_people, context_place, context_activity, note, share_with_partners, created_at, emotions, is_deleted
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE($13, NOW()))
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE($13, NOW()), $14, false)
        RETURNING *`,
       [
         req.user.userId,
@@ -369,6 +369,7 @@ app.post('/api/checkins', authMiddleware, async (req, res) => {
         note || null,
         shareWithPartners !== false,
         createdAt || null,
+        JSON.stringify(emotions || []),
       ]
     );
 
@@ -460,12 +461,12 @@ app.post('/api/checkins', authMiddleware, async (req, res) => {
   }
 });
 
-// 7. Get user's checkins
+// 7. Get user's checkins (excluding soft-deleted)
 app.get('/api/checkins', authMiddleware, async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit || '50', 10);
+    const limit = parseInt(req.query.limit || '200', 10);
     const checkinsRes = await query(
-      'SELECT * FROM checkins WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2',
+      'SELECT * FROM checkins WHERE user_id = $1 AND (is_deleted = false OR is_deleted IS NULL) ORDER BY created_at DESC LIMIT $2',
       [req.user.userId, limit]
     );
     res.json({ checkins: checkinsRes.rows });
@@ -474,7 +475,97 @@ app.get('/api/checkins', authMiddleware, async (req, res) => {
   }
 });
 
-// 8. Partner feed: Get partners' checkins (only if shared)
+// 7a. Batch sync check-ins from guest session to authenticated profile
+app.post('/api/checkins/sync-batch', authMiddleware, async (req, res) => {
+  try {
+    const { checkins } = req.body;
+    if (!Array.isArray(checkins) || checkins.length === 0) {
+      return res.json({ success: true, count: 0 });
+    }
+
+    let inserted = 0;
+    for (const item of checkins) {
+      const localId = item.id || item.localId;
+      const emotionId = item.emotionId || item.emotions?.[0]?.id || 'доволен';
+      const quadrant = item.quadrantId || item.quadrant || 'low_pleasant';
+      const energy = item.energy || (quadrant.includes('high') ? 'high' : 'low');
+      const pleasantness = item.pleasantness || (quadrant.includes('pleasant') && !quadrant.includes('unpleasant') ? 'pleasant' : 'unpleasant');
+      const intensity = item.intensity || 2;
+      const emotionsList = item.emotions && item.emotions.length > 0 ? item.emotions : [{ id: emotionId, quadrantId: quadrant, intensity }];
+      const contextPeople = item.context?.people || [];
+      const contextPlace = item.context?.location || item.context?.place || [];
+      const contextActivity = item.context?.activity || [];
+      const note = item.note || null;
+      const createdAt = item.timestamp || item.created_at || null;
+
+      // Check if this checkin already exists
+      const existing = await query(
+        `SELECT id FROM checkins 
+         WHERE user_id = $1 AND (
+           (local_id IS NOT NULL AND local_id = $2)
+           OR (created_at = $3::timestamp with time zone)
+         )`,
+        [req.user.userId, localId, createdAt]
+      );
+
+      if (existing.rows.length === 0) {
+        await query(
+          `INSERT INTO checkins (
+             user_id, local_id, emotion_id, energy, pleasantness, intensity, quadrant,
+             context_people, context_place, context_activity, note, share_with_partners, created_at, emotions, is_deleted
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, false, COALESCE($12, NOW()), $13, false)`,
+          [
+            req.user.userId,
+            localId,
+            emotionId,
+            energy,
+            pleasantness,
+            intensity,
+            quadrant,
+            JSON.stringify(contextPeople),
+            JSON.stringify(contextPlace),
+            JSON.stringify(contextActivity),
+            note,
+            createdAt,
+            JSON.stringify(emotionsList),
+          ]
+        );
+        inserted++;
+      }
+    }
+
+    res.json({ success: true, count: inserted });
+  } catch (err) {
+    console.error('[CHECKIN] Batch sync error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 7b. Soft Delete Check-in (never physically destroy or overwrite records!)
+app.delete('/api/checkins/:id', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await query(
+      `UPDATE checkins 
+       SET is_deleted = true, deleted_at = NOW() 
+       WHERE user_id = $1 AND (id::text = $2 OR local_id = $2)
+       RETURNING id, local_id, is_deleted, deleted_at`,
+      [req.user.userId, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Запись не найдена' });
+    }
+
+    res.json({ success: true, softDeleted: true, checkin: result.rows[0] });
+  } catch (err) {
+    console.error('[CHECKIN] Soft delete error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 8. Partner feed: Get partners' checkins (excluding soft-deleted)
 app.get('/api/partner/feed', authMiddleware, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit || '30', 10);
@@ -483,7 +574,9 @@ app.get('/api/partner/feed', authMiddleware, async (req, res) => {
        FROM checkins c
        JOIN users u ON u.id = c.user_id
        JOIN friendships f ON f.friend_id = c.user_id
-       WHERE f.user_id = $1 AND f.status = 'accepted' AND f.share_checkins = true AND (c.share_with_partners = true OR c.share_with_partners IS NULL)
+       WHERE f.user_id = $1 AND f.status = 'accepted' AND f.share_checkins = true 
+         AND (c.share_with_partners = true OR c.share_with_partners IS NULL)
+         AND (c.is_deleted = false OR c.is_deleted IS NULL)
        ORDER BY c.created_at DESC
        LIMIT $2`,
       [req.user.userId, limit]

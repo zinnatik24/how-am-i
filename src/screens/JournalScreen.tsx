@@ -13,6 +13,7 @@ import { CheckInRecord } from '../types';
 import { QUADRANTS } from '../data/emotionsData';
 import { useLanguage } from '../i18n/LanguageContext';
 import { deleteCheckIn } from '../storage/checkInStorage';
+import { softDeleteCheckInApi } from '../services/api';
 import { triggerHaptic } from '../utils/haptics';
 import { getLocalizedEmotionName, getLocalizedContextTag } from '../utils/localizationHelper';
 import { shareCheckIn } from '../utils/shareHelper';
@@ -31,6 +32,8 @@ export const JournalScreen: React.FC<JournalScreenProps> = ({
   const handleDelete = (id: string) => {
     const confirmDelete = async () => {
       triggerHaptic('medium');
+      // Soft-delete on cloud so data is never permanently lost
+      softDeleteCheckInApi(id).catch(() => {});
       const updated = await deleteCheckIn(id);
       onCheckInsUpdated(updated);
     };

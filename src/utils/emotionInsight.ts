@@ -61,26 +61,24 @@ export function getEmotionsInsight(
     };
   });
 
-  // Construct coherent synthesized psychological narrative
+  // Construct coherent synthesized psychological narrative (only when 2+ emotions exist)
   let narrative = '';
   if (items.length === 1) {
-    const it = items[0];
-    narrative = isRu
-      ? `«${it.name}»: ${it.definition}`
-      : `"${it.name}": ${it.definition}`;
+    // When only 1 emotion is chosen, do not repeat the definition in narrative header
+    narrative = '';
   } else if (items.length === 2) {
     const it1 = items[0];
     const it2 = items[1];
     narrative = isRu
-      ? `Комбинация чувств: светлое ощущение «${it1.name}» соединяется с переживанием «${it2.name}». Это отражает многогранное состояние, когда в теле и мыслях сплетаются разные потоки энергии.`
-      : `Combination of feelings: experiencing "${it1.name}" alongside "${it2.name}". This shows emotional complexity where different energy dynamics coexist.`;
+      ? `Сочетание чувств «${it1.name}» и «${it2.name}»: объединяет разные оттенки состояния в сбалансированный эмоциональный фон.`
+      : `Combining "${it1.name}" and "${it2.name}": reflects subtle nuances across different energy levels.`;
   } else {
     const it1 = items[0];
     const it2 = items[1];
     const it3 = items[2];
     narrative = isRu
-      ? `Глубокая комбинация чувств: переплетение «${it1.name}», «${it2.name}» и «${it3.name}». Внутренний мир вмещает контрастные оттенки энергии, помогая тонко и бережно прочувствовать текущий момент.`
-      : `Rich combination of feelings: blending "${it1.name}", "${it2.name}", and "${it3.name}". Your internal state reflects subtle emotional granularity across diverse spectrums.`;
+      ? `Многогранное состояние («${it1.name}», «${it2.name}», «${it3.name}»): одновременное проживание нескольких чувств помогает точнее распознать свои потребности.`
+      : `Multi-layered state ("${it1.name}", "${it2.name}", "${it3.name}"): recognizing multiple emotions helps identify your current needs.`;
   }
 
   return { items, narrative };
