@@ -221,7 +221,17 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
     }, 100);
   };
 
-  // Send Check-in Card into Chat
+  // Open Real Check-in Flow (opens CheckInModal)
+  const handleOpenRealCheckIn = () => {
+    triggerHaptic('medium');
+    if (onOpenCheckIn) {
+      onOpenCheckIn();
+    } else {
+      Alert.alert('Чекин', 'Откройте чекин на главном экране.');
+    }
+  };
+
+  // Send Check-in Card into Chat (if ever triggered directly)
   const handleShareCheckInCard = async () => {
     if (!selectedPartner) return;
     triggerHaptic('medium');
@@ -235,11 +245,34 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
       return;
     }
 
-    const primaryEmotion = latestCheckIn.emotions && latestCheckIn.emotions[0];
+    const emotionsList = (latestCheckIn.emotions && latestCheckIn.emotions.length > 0)
+      ? latestCheckIn.emotions.map((e) => ({
+          id: e.id,
+          name: e.name,
+          quadrantId: e.quadrantId,
+          intensity: e.intensity || 2,
+        }))
+      : [
+          {
+            id: latestCheckIn.emotionId,
+            name: latestCheckIn.emotionName || latestCheckIn.emotionId,
+            quadrantId: latestCheckIn.quadrantId,
+            intensity: latestCheckIn.intensity || 2,
+          },
+        ];
+
+    const primaryEmotion = emotionsList[0];
     const quadId: QuadrantId = primaryEmotion?.quadrantId || latestCheckIn.quadrantId || 'low_pleasant';
     const quad = QUADRANTS[quadId];
     const quadName = quad?.translations?.ru || quadId;
     const emotionRu = primaryEmotion?.name || latestCheckIn.emotionName || latestCheckIn.emotionId;
+
+    const cleanNote =
+      latestCheckIn.note &&
+      latestCheckIn.note.trim() &&
+      !latestCheckIn.note.trim().toLowerCase().startsWith('отметил')
+        ? latestCheckIn.note.trim()
+        : '';
 
     const checkinData: ChatCheckinData = {
       checkin_id: latestCheckIn.id,
@@ -250,19 +283,21 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
       energy: quad?.energy || 'low',
       pleasantness: quad?.pleasantness || 'pleasant',
       intensity: latestCheckIn.intensity || 2,
+      emotions: emotionsList,
       context_people: latestCheckIn.context?.people || [],
       context_place: latestCheckIn.context?.location || [],
       context_activity: latestCheckIn.context?.activity || [],
-      note: latestCheckIn.note || '',
+      note: cleanNote,
       created_at: latestCheckIn.timestamp,
     };
 
-    setLastSentBanner(`💛 Вы отправили настроение «${emotionRu}»`);
+    const titleStr = emotionsList.map((e) => e.name).join(', ') || emotionRu;
+    setLastSentBanner(`💛 Вы отправили настроение «${titleStr}»`);
     setTimeout(() => setLastSentBanner(null), 3000);
 
     await sendChatMessage(
       selectedPartner.id,
-      latestCheckIn.note || `Отметил(а) настроение: ${emotionRu}`,
+      cleanNote,
       'checkin',
       checkinData
     );
@@ -638,11 +673,14 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
                 lastMsgTime = formatMessageTime(msg.created_at);
 
                 if (msg.type === 'checkin') {
-                  const emotion =
-                    msg.checkin_data?.emotionNameRu ||
-                    msg.checkin_data?.emotion_id ||
-                    'настроением';
-                  lastMsgSnippet = `${prefix}⚡ Чекин: ${emotion}`;
+                  const emotions = msg.checkin_data?.emotions;
+                  const emotionTitle =
+                    emotions && emotions.length > 0
+                      ? emotions.map((e) => e.name).join(', ')
+                      : msg.checkin_data?.emotionNameRu ||
+                        msg.checkin_data?.emotion_id ||
+                        'настроением';
+                  lastMsgSnippet = `${prefix}⚡ Чекин: ${emotionTitle}`;
                 } else if (msg.type === 'reaction') {
                   lastMsgSnippet = `${prefix}${msg.content || 'Знак заботы'}`;
                 } else if (msg.type === 'ping') {
@@ -657,7 +695,11 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
                   checkin.emotion_id,
                   language
                 );
-                lastMsgSnippet = `⚡ ${emName}${checkin.note ? ` — «${checkin.note}»` : ''}`;
+                const hasValidNote =
+                  checkin.note &&
+                  checkin.note.trim() &&
+                  !checkin.note.trim().toLowerCase().startsWith('отметил');
+                lastMsgSnippet = `⚡ ${emName}${hasValidNote ? ` — «${checkin.note}»` : ''}`;
               }
 
               return (
@@ -883,6 +925,22 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
                 const quadEmoji = getQuadrantEmoji(data.quadrant);
                 const emotionTitle = data.emotionNameRu || data.emotion_id;
 
+                const emotionsList =
+                  data.emotions && data.emotions.length > 0
+                    ? data.emotions
+                    : [
+                        {
+                          id: data.emotion_id,
+                          name: data.emotionNameRu || data.emotion_id,
+                          quadrantId: data.quadrant,
+                          intensity: data.intensity || 2,
+                        },
+                      ];
+
+                const rawNote = (data.note || msg.content || '').trim();
+                const showNote =
+                  rawNote.length > 0 && !rawNote.toLowerCase().startsWith('отметил');
+
                 return (
                   <View
                     key={msg.id || `chk_${index}`}
@@ -916,21 +974,36 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
                             </Text>
                           </View>
                         </View>
-                        <Text style={{ fontSize: 20 }}>{quadEmoji}</Text>
-                      </View>
-
-                      {/* Main Glow Pill with Emotion Name */}
-                      <View style={[styles.checkinMoodPill, { backgroundColor: quadColor }]}>
-                        <Text style={styles.checkinMoodPillText}>
-                          {emotionTitle.toUpperCase()}
+                        <Text style={{ fontSize: 18 }}>
+                          {emotionsList
+                            .map((em) => getQuadrantEmoji(em.quadrantId || data.quadrant))
+                            .join(' ')}
                         </Text>
                       </View>
 
-                      {/* Note / Thought (if exists) */}
-                      {(data.note || msg.content) ? (
+                      {/* Emotions Badges (supports 1, 2, or 3 emotions) */}
+                      <View style={styles.checkinEmotionsWrap}>
+                        {emotionsList.map((em, emIdx) => {
+                          const emColor = getQuadrantColor(em.quadrantId || data.quadrant);
+                          const emEmoji = getQuadrantEmoji(em.quadrantId || data.quadrant);
+                          return (
+                            <View
+                              key={`em_${emIdx}_${em.id}`}
+                              style={[styles.checkinMoodPill, { backgroundColor: emColor }]}
+                            >
+                              <Text style={styles.checkinMoodPillText}>
+                                {emEmoji} {em.name.toUpperCase()}
+                              </Text>
+                            </View>
+                          );
+                        })}
+                      </View>
+
+                      {/* Note / Thought (only shown if a real personal note was entered) */}
+                      {showNote ? (
                         <View style={styles.checkinNoteBox}>
                           <Text style={styles.checkinNoteText}>
-                            «{data.note || msg.content}»
+                            «{rawNote}»
                           </Text>
                         </View>
                       ) : null}
@@ -1196,10 +1269,10 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
 
           {/* D. CHAT INPUT BAR WITH MOOD SHARE BUTTON */}
           <View style={styles.inputBar}>
-            {/* 💖 Share Check-in Card Button */}
+            {/* 💖 Open Real Check-in Flow Button */}
             <TouchableOpacity
               style={styles.shareCheckinBtn}
-              onPress={handleShareCheckInCard}
+              onPress={handleOpenRealCheckIn}
               activeOpacity={0.8}
             >
               <Ionicons name="sparkles" size={18} color="#FBBF24" />
@@ -2260,12 +2333,17 @@ const styles = StyleSheet.create({
     color: '#718096',
     fontSize: 11,
   },
+  checkinEmotionsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 10,
+  },
   checkinMoodPill: {
     alignSelf: 'flex-start',
     paddingVertical: 6,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     borderRadius: 16,
-    marginBottom: 10,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,

@@ -10,7 +10,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LanguageProvider, useLanguage } from './src/i18n/LanguageContext';
-import { AuthProvider } from './src/context/AuthContext';
+import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { CheckInRecord } from './src/types';
 import { getCheckIns, seedSampleData } from './src/storage/checkInStorage';
 import { HomeScreen } from './src/screens/HomeScreen';
@@ -25,6 +25,7 @@ type TabKey = 'today' | 'journal' | 'friends' | 'trends' | 'settings';
 
 function MainApp() {
   const { t } = useLanguage();
+  const { refreshFeed } = useAuth();
   const [currentTab, setCurrentTab] = useState<TabKey>('today');
   const [checkIns, setCheckIns] = useState<CheckInRecord[]>([]);
   const [isCheckInOpen, setIsCheckInOpen] = useState<boolean>(false);
@@ -57,6 +58,13 @@ function MainApp() {
 
   const handleNewCheckInSaved = (record: CheckInRecord) => {
     setCheckIns((prev) => [record, ...prev]);
+    // Immediately refresh partner feed and chats so checkin appears in chat
+    setTimeout(() => {
+      refreshFeed();
+    }, 400);
+    setTimeout(() => {
+      refreshFeed();
+    }, 1500);
   };
 
   return (

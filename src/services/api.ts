@@ -175,6 +175,7 @@ export async function saveCheckinToCloud(payload: {
   createdAt?: string;
   emotionNameRu?: string;
   quadrantNameRu?: string;
+  emotions?: Array<{ id: string; name: string; quadrantId: string; intensity: number }>;
   shareWithPartners?: boolean;
 }): Promise<void> {
   try {
@@ -237,6 +238,12 @@ export interface ChatCheckinData {
   energy: string;
   pleasantness: string;
   intensity: number;
+  emotions?: Array<{
+    id: string;
+    name: string;
+    quadrantId: string;
+    intensity: number;
+  }>;
   context_people?: string[];
   context_place?: string[];
   context_activity?: string[];

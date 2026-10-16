@@ -177,6 +177,7 @@ export const CheckInModal: React.FC<CheckInModalProps> = ({
         createdAt: newRecord.timestamp,
         emotionNameRu: primaryEmotion.ru.name,
         quadrantNameRu: QUADRANTS[primaryEmotion.quadrant]?.translations?.ru || primaryEmotion.quadrant,
+        emotions: emotionsPayload,
         shareWithPartners,
       });
 

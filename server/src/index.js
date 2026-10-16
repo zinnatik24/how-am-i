@@ -306,6 +306,7 @@ app.post('/api/checkins', authMiddleware, async (req, res) => {
       emotionNameRu,
       emotionNameEn,
       quadrantNameRu,
+      emotions = [],
       shareWithPartners = true,
     } = req.body;
 
@@ -352,8 +353,37 @@ app.post('/api/checkins', authMiddleware, async (req, res) => {
 
       if (partnersRes.rows.length > 0) {
         const senderName = partnersRes.rows[0].sender_name || 'Близкий человек';
-        const emotionTitle = emotionNameRu || emotionId;
-        const quadTitle = quadrantNameRu ? ` (${quadrantNameRu})` : '';
+        const emotionsList = (emotions && emotions.length > 0)
+          ? emotions
+          : [
+              {
+                id: emotionId,
+                name: emotionNameRu || emotionId,
+                quadrantId: quadrant,
+                intensity: intensity || 2,
+              }
+            ];
+
+        const cleanNote = (note && note.trim() && !note.trim().toLowerCase().startsWith('отметил'))
+          ? note.trim()
+          : null;
+
+        const checkinPayload = {
+          checkin_id: checkin.id,
+          emotion_id: emotionId,
+          emotionNameRu: emotionNameRu || emotionId,
+          quadrant,
+          quadrantNameRu: quadrantNameRu || quadrant,
+          energy,
+          pleasantness,
+          intensity,
+          emotions: emotionsList,
+          context_people: contextPeople || [],
+          context_place: contextPlace || [],
+          context_activity: contextActivity || [],
+          note: cleanNote,
+          created_at: checkin.created_at,
+        };
 
         // Insert checkin card into chat messages for each partner
         for (const p of partnersRes.rows) {
@@ -365,32 +395,19 @@ app.post('/api/checkins', authMiddleware, async (req, res) => {
               convId,
               req.user.userId,
               p.partner_id,
-              note || null,
-              JSON.stringify({
-                checkin_id: checkin.id,
-                emotion_id: emotionId,
-                emotionNameRu: emotionNameRu || emotionId,
-                quadrant,
-                quadrantNameRu: quadrantNameRu || quadrant,
-                energy,
-                pleasantness,
-                intensity,
-                context_people: contextPeople || [],
-                context_place: contextPlace || [],
-                context_activity: contextActivity || [],
-                note: note || '',
-                created_at: checkin.created_at,
-              }),
+              cleanNote,
+              JSON.stringify(checkinPayload),
             ]
           ).catch((e) => console.warn('[CHECKIN] Could not insert to messages:', e));
         }
 
         const tokens = partnersRes.rows.map(p => p.push_token).filter(Boolean);
         if (tokens.length > 0) {
+          const emotionTitle = emotionsList.map(e => e.name).join(', ') || emotionNameRu || emotionId;
           sendExpoPushNotification(
             tokens,
             `💛 ${senderName} отметил(а) настроение`,
-            `Чувствует: ${emotionTitle}${quadTitle}`,
+            `Чувствует: ${emotionTitle}${cleanNote ? ` — «${cleanNote}»` : ''}`,
             {
               type: 'checkin',
               checkinId: checkin.id,
@@ -667,9 +684,12 @@ app.post('/api/messages', authMiddleware, async (req, res) => {
       let pushBody = content || 'Новое сообщение';
 
       if (type === 'checkin') {
-        const emotion = checkinData?.emotionNameRu || checkinData?.emotion_id || 'настроением';
+        const emotionsList = checkinData?.emotions && checkinData.emotions.length > 0
+          ? checkinData.emotions.map(e => e.name).join(', ')
+          : (checkinData?.emotionNameRu || checkinData?.emotion_id || 'настроением');
         pushTitle = `💛 ${sender.name} поделился(лась) настроением`;
-        pushBody = `Чувствует: ${emotion}${checkinData?.note ? ` — «${checkinData.note}»` : ''}`;
+        const hasRealNote = checkinData?.note && !checkinData.note.toLowerCase().startsWith('отметил');
+        pushBody = `Чувствует: ${emotionsList}${hasRealNote ? ` — «${checkinData.note}»` : ''}`;
       } else if (type === 'reaction') {
         pushTitle = `❤️ ${sender.name} отправил(а) знак заботы`;
         pushBody = content || 'Знак заботы';
