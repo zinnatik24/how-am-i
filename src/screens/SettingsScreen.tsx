@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Platform,
   ScrollView,
@@ -17,6 +18,10 @@ import { useAuth } from '../context/AuthContext';
 import { SupportedLanguage, CheckInRecord } from '../types';
 import { clearAllCheckIns } from '../storage/checkInStorage';
 import { triggerHaptic } from '../utils/haptics';
+import {
+  createTelegramAuthSessionApi,
+  checkTelegramAuthSessionStatusApi,
+} from '../services/api';
 
 interface SettingsScreenProps {
   onCheckInsUpdated: (records: CheckInRecord[]) => void;
@@ -172,7 +177,16 @@ const METHODOLOGY_DATA: MethodologySection[] = [
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onCheckInsUpdated }) => {
   const { language, setLanguage, t } = useLanguage();
-  const { user, isAuthenticated, signInWithGoogle, signInWithTelegram, signInDemo, signOut } = useAuth();
+  const {
+    user,
+    isAuthenticated,
+    signInWithGoogle,
+    signInWithTelegram,
+    signInWithApple,
+    applyAuthSession,
+    signInDemo,
+    signOut,
+  } = useAuth();
 
   const isRu = language === 'ru';
 
@@ -195,9 +209,64 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onCheckInsUpdate
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState(false);
   const [telegramInput, setTelegramInput] = useState('');
   const [telegramSubmitting, setTelegramSubmitting] = useState(false);
+  const [isWaitingForBot, setIsWaitingForBot] = useState(false);
+  const [botAuthCode, setBotAuthCode] = useState<string | null>(null);
+
+  // Telegram Bot Deep Link Polling
+  useEffect(() => {
+    let timer: any = null;
+    if (isWaitingForBot && botAuthCode) {
+      timer = setInterval(async () => {
+        try {
+          const res = await checkTelegramAuthSessionStatusApi(botAuthCode);
+          if (res.completed && res.token && res.user) {
+            clearInterval(timer);
+            setIsWaitingForBot(false);
+            setBotAuthCode(null);
+            setIsTelegramModalOpen(false);
+            await applyAuthSession({ token: res.token, user: res.user });
+            Alert.alert(
+              isRu ? 'Успешный вход через Telegram!' : 'Telegram Sign In Successful!',
+              isRu ? `Добро пожаловать, ${res.user.name}!` : `Welcome, ${res.user.name}!`
+            );
+          }
+        } catch (e) {
+          // ignore transient poll error
+        }
+      }, 2000);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [isWaitingForBot, botAuthCode]);
+
+  const handleStartBotAuth = async () => {
+    triggerHaptic('medium');
+    setTelegramSubmitting(true);
+    try {
+      const session = await createTelegramAuthSessionApi();
+      if (session.success && session.botUrl) {
+        setBotAuthCode(session.authCode);
+        setIsWaitingForBot(true);
+        // Open Telegram app via deep link
+        await Linking.openURL(session.botUrl).catch(() => {
+          Alert.alert(
+            isRu ? 'Не удалось открыть Telegram' : 'Could not open Telegram',
+            isRu ? `Откройте бота вручную: ${session.botUrl}` : `Open the bot manually: ${session.botUrl}`
+          );
+        });
+      }
+    } catch (e: any) {
+      Alert.alert(isRu ? 'Ошибка' : 'Error', e.message || 'Не удалось запустить авторизацию через бота');
+    } finally {
+      setTelegramSubmitting(false);
+    }
+  };
 
   const handleTelegramLoginPress = () => {
     triggerHaptic('medium');
+    setIsWaitingForBot(false);
+    setBotAuthCode(null);
     // Check if inside Telegram WebApp
     if (typeof window !== 'undefined' && (window as any).Telegram?.WebApp?.initDataUnsafe?.user) {
       const tgUser = (window as any).Telegram.WebApp.initDataUnsafe.user;
@@ -414,17 +483,19 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onCheckInsUpdate
                 : 'Sign in to protect your history, synchronize across devices and connect with your partner.'}
             </Text>
 
+            {/* 1. Apple Sign-In (App Store Guideline 4.8 compliant) */}
             <TouchableOpacity
-              style={styles.googleBtn}
-              onPress={signInWithGoogle}
+              style={styles.appleBtn}
+              onPress={() => signInWithApple()}
               activeOpacity={0.85}
             >
-              <Ionicons name="logo-google" size={18} color="#0A0D12" />
-              <Text style={styles.googleBtnText}>
-                {isRu ? 'Войти через Google' : 'Sign in with Google'}
+              <Ionicons name="logo-apple" size={20} color="#FFFFFF" />
+              <Text style={styles.appleBtnText}>
+                {isRu ? 'Войти с Apple' : 'Sign in with Apple'}
               </Text>
             </TouchableOpacity>
 
+            {/* 2. Telegram Sign-In */}
             <TouchableOpacity
               style={styles.telegramBtn}
               onPress={handleTelegramLoginPress}
@@ -433,6 +504,18 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onCheckInsUpdate
               <Ionicons name="paper-plane" size={18} color="#FFFFFF" />
               <Text style={styles.telegramBtnText}>
                 {isRu ? 'Войти через Telegram' : 'Sign in with Telegram'}
+              </Text>
+            </TouchableOpacity>
+
+            {/* 3. Google Sign-In */}
+            <TouchableOpacity
+              style={styles.googleBtn}
+              onPress={signInWithGoogle}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="logo-google" size={18} color="#0A0D12" />
+              <Text style={styles.googleBtnText}>
+                {isRu ? 'Войти через Google' : 'Sign in with Google'}
               </Text>
             </TouchableOpacity>
 
@@ -688,36 +771,82 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onCheckInsUpdate
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.modalSubtitle}>
-              {isRu
-                ? 'Укажите ваш @username или имя в Telegram, чтобы сохранять чекины и быть на связи с близкими.'
-                : 'Enter your Telegram @username or name to sync check-ins and connect with friends.'}
-            </Text>
+            {isWaitingForBot ? (
+              <View style={styles.botWaitingContainer}>
+                <ActivityIndicator size="large" color="#2AABEE" style={{ marginBottom: 14 }} />
+                <Text style={styles.botWaitingTitle}>
+                  {isRu ? 'Ожидание подтверждения...' : 'Waiting for confirmation...'}
+                </Text>
+                <Text style={styles.botWaitingDesc}>
+                  {isRu
+                    ? 'Нажмите кнопку СТАРТ в открывшемся Telegram-боте. Приложение автоматически выполнит вход.'
+                    : 'Tap START in the Telegram bot. The app will complete login automatically.'}
+                </Text>
+                <TouchableOpacity
+                  style={styles.cancelBotWaitBtn}
+                  onPress={() => {
+                    setIsWaitingForBot(false);
+                    setBotAuthCode(null);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.cancelBotWaitBtnText}>{isRu ? 'Назад к вводу никнейма' : 'Back to username input'}</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <>
+                <Text style={styles.modalSubtitle}>
+                  {isRu
+                    ? 'Войдите через официального Telegram-бота по Deep Link или укажите ваш @username:'
+                    : 'Sign in via official Telegram bot Deep Link or enter your @username:'}
+                </Text>
 
-            <TextInput
-              style={styles.telegramInput}
-              placeholder={isRu ? '@username или Ваше имя' : '@username or Your Name'}
-              placeholderTextColor="#718096"
-              value={telegramInput}
-              onChangeText={setTelegramInput}
-              autoCapitalize="none"
-              autoCorrect={false}
-              returnKeyType="done"
-              onSubmitEditing={handleTelegramSubmit}
-            />
+                <TouchableOpacity
+                  style={styles.telegramDeepLinkBtn}
+                  onPress={handleStartBotAuth}
+                  disabled={telegramSubmitting}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="paper-plane" size={18} color="#FFFFFF" />
+                  <Text style={styles.telegramSubmitBtnText}>
+                    {telegramSubmitting
+                      ? (isRu ? 'Подготовка...' : 'Preparing...')
+                      : (isRu ? 'Открыть бота в Telegram' : 'Open Telegram Bot')}
+                  </Text>
+                </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.telegramSubmitBtn, telegramSubmitting && { opacity: 0.6 }]}
-              onPress={handleTelegramSubmit}
-              disabled={telegramSubmitting}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.telegramSubmitBtnText}>
-                {telegramSubmitting
-                  ? (isRu ? 'Вход...' : 'Signing in...')
-                  : (isRu ? 'Войти в аккаунт' : 'Sign In')}
-              </Text>
-            </TouchableOpacity>
+                <View style={styles.orDividerRow}>
+                  <View style={styles.orDividerLine} />
+                  <Text style={styles.orDividerText}>{isRu ? 'ИЛИ' : 'OR'}</Text>
+                  <View style={styles.orDividerLine} />
+                </View>
+
+                <TextInput
+                  style={styles.telegramInput}
+                  placeholder={isRu ? '@username или Ваше имя' : '@username or Your Name'}
+                  placeholderTextColor="#718096"
+                  value={telegramInput}
+                  onChangeText={setTelegramInput}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="done"
+                  onSubmitEditing={handleTelegramSubmit}
+                />
+
+                <TouchableOpacity
+                  style={[styles.telegramSubmitBtn, telegramSubmitting && { opacity: 0.6 }]}
+                  onPress={handleTelegramSubmit}
+                  disabled={telegramSubmitting}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.telegramSubmitBtnText}>
+                    {telegramSubmitting
+                      ? (isRu ? 'Вход...' : 'Signing in...')
+                      : (isRu ? 'Войти по никнейму' : 'Sign in by Username')}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         </View>
       </Modal>
@@ -1247,5 +1376,78 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '700',
+  },
+  appleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#000000',
+    borderRadius: 14,
+    paddingVertical: 13,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    marginBottom: 10,
+  },
+  appleBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  telegramDeepLinkBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2AABEE',
+    borderRadius: 12,
+    paddingVertical: 14,
+    gap: 8,
+    marginBottom: 14,
+  },
+  orDividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 14,
+  },
+  orDividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#222B36',
+  },
+  orDividerText: {
+    color: '#718096',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  botWaitingContainer: {
+    alignItems: 'center',
+    paddingVertical: 16,
+  },
+  botWaitingTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  botWaitingDesc: {
+    color: '#94A3B8',
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginBottom: 18,
+  },
+  cancelBotWaitBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    backgroundColor: '#1E2634',
+  },
+  cancelBotWaitBtnText: {
+    color: '#E2E8F0',
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

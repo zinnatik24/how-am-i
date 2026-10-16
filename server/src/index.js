@@ -3,6 +3,7 @@ import cors from 'cors';
 import axios from 'axios';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { pool, query, waitForDb } from './db.js';
 import { signUserToken, authMiddleware, generateInviteCode } from './auth.js';
@@ -128,7 +129,141 @@ app.post('/api/auth/google', async (req, res) => {
   }
 });
 
-// Telegram auth / registration
+const TELEGRAM_BOT_USERNAME = process.env.TELEGRAM_BOT_USERNAME || 'HowAmI_App_Bot';
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
+
+// Telegram Deep Link session creation
+app.post('/api/auth/telegram/session', async (req, res) => {
+  try {
+    const authCode = crypto.randomBytes(12).toString('hex');
+    await query(
+      `INSERT INTO telegram_auth_sessions (auth_code, status) VALUES ($1, 'pending')`,
+      [authCode]
+    );
+    const botUrl = `https://t.me/${TELEGRAM_BOT_USERNAME}?start=auth_${authCode}`;
+    res.json({
+      success: true,
+      authCode,
+      botUrl,
+      botUsername: TELEGRAM_BOT_USERNAME,
+    });
+  } catch (err) {
+    console.error('[AUTH] Telegram session create error:', err);
+    res.status(500).json({ error: 'Не удалось создать сессию авторизации Telegram' });
+  }
+});
+
+// Check if Telegram auth session was approved
+app.get('/api/auth/telegram/session/status', async (req, res) => {
+  try {
+    const { code } = req.query;
+    if (!code) {
+      return res.status(400).json({ error: 'Не указан authCode' });
+    }
+    const sessionRes = await query(
+      `SELECT * FROM telegram_auth_sessions WHERE auth_code = $1 AND expires_at > NOW()`,
+      [code]
+    );
+    if (sessionRes.rows.length === 0) {
+      return res.json({ completed: false, status: 'expired' });
+    }
+    const session = sessionRes.rows[0];
+    if (session.status === 'completed' && session.user_id) {
+      const userRes = await query('SELECT * FROM users WHERE id = $1', [session.user_id]);
+      if (userRes.rows.length > 0) {
+        const user = userRes.rows[0];
+        const token = signUserToken(user);
+        return res.json({
+          completed: true,
+          token,
+          user: {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            avatarUrl: user.avatar_url,
+            inviteCode: user.invite_code,
+          },
+        });
+      }
+    }
+    res.json({ completed: false, status: session.status });
+  } catch (err) {
+    console.error('[AUTH] Telegram session status check error:', err);
+    res.status(500).json({ error: 'Ошибка проверки сессии' });
+  }
+});
+
+// Telegram Bot Webhook endpoint (handles /start auth_<code_here>)
+app.post('/api/auth/telegram/webhook', async (req, res) => {
+  try {
+    const update = req.body;
+    const msg = update?.message;
+    if (!msg || !msg.text) {
+      return res.json({ ok: true });
+    }
+
+    const text = msg.text.trim();
+    const from = msg.from;
+    const chatId = msg.chat?.id;
+
+    if (text.startsWith('/start auth_')) {
+      const authCode = text.replace('/start auth_', '').trim();
+      const tgId = String(from.id);
+      const tgUsername = from.username ? `@${from.username}` : '';
+      const displayName = [from.first_name, from.last_name].filter(Boolean).join(' ') || tgUsername || 'Пользователь';
+      const tgEmail = `tg_${tgId}@telegram.user`;
+
+      // Find or create internal user (user.id is always internal UUID)
+      let userRes = await query(
+        'SELECT * FROM users WHERE telegram_id = $1 OR email = $2 OR google_id = $3',
+        [tgId, tgEmail, `tg:${tgId}`]
+      );
+      let user;
+      if (userRes.rows.length === 0) {
+        const inviteCode = generateInviteCode(6);
+        const insertRes = await query(
+          `INSERT INTO users (telegram_id, email, name, invite_code)
+           VALUES ($1, $2, $3, $4)
+           RETURNING *`,
+          [tgId, tgEmail, displayName, inviteCode]
+        );
+        user = insertRes.rows[0];
+      } else {
+        user = userRes.rows[0];
+        await query(
+          'UPDATE users SET telegram_id = $1, name = COALESCE(name, $2), updated_at = NOW() WHERE id = $3',
+          [tgId, displayName, user.id]
+        );
+      }
+
+      // Complete session
+      await query(
+        `UPDATE telegram_auth_sessions
+         SET status = 'completed', user_id = $1, telegram_id = $2, telegram_user = $3
+         WHERE auth_code = $4`,
+        [user.id, tgId, JSON.stringify(from), authCode]
+      );
+
+      // Reply back to user in Telegram if BOT_TOKEN configured
+      if (TELEGRAM_BOT_TOKEN && chatId) {
+        try {
+          await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            chat_id: chatId,
+            text: `✨ Добро пожаловать в «Как Я?», ${from.first_name || 'друг'}!\n\nАвторизация прошла успешно. Можете вернуться в приложение — вход выполнен автоматически!`,
+          });
+        } catch (tgErr) {
+          console.warn('[AUTH] Could not send TG confirmation message:', tgErr.message);
+        }
+      }
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[AUTH] Telegram webhook error:', err);
+    res.json({ ok: true });
+  }
+});
+
+// Telegram auth / direct registration fallback
 app.post('/api/auth/telegram', async (req, res) => {
   try {
     const { telegramId, username, firstName, lastName, photoUrl, name } = req.body;
@@ -140,21 +275,22 @@ app.post('/api/auth/telegram', async (req, res) => {
     const cleanUsername = username ? username.replace(/^@/, '').trim() : '';
     const cleanId = String(rawId).replace(/^@/, '').trim();
     const googleId = `tg:${cleanId.toLowerCase()}`;
+    const tgId = /^\d+$/.test(cleanId) ? cleanId : null;
     const email = `tg_${cleanId.toLowerCase()}@telegram.user`;
     const displayName = name || [firstName, lastName].filter(Boolean).join(' ') || (cleanUsername ? `@${cleanUsername}` : cleanId);
     const avatarUrl = photoUrl || null;
 
-    // Check if user exists by google_id or email
-    let userRes = await query('SELECT * FROM users WHERE google_id = $1 OR email = $2', [googleId, email]);
+    // Check if user exists by telegram_id, google_id or email
+    let userRes = await query('SELECT * FROM users WHERE telegram_id = $1 OR google_id = $2 OR email = $3', [cleanId, googleId, email]);
     let user;
 
     if (userRes.rows.length === 0) {
       const inviteCode = generateInviteCode(6);
       const insertRes = await query(
-        `INSERT INTO users (google_id, email, name, avatar_url, invite_code)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO users (telegram_id, google_id, email, name, avatar_url, invite_code)
+         VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING *`,
-        [googleId, email, displayName, avatarUrl, inviteCode]
+        [tgId || cleanId, googleId, email, displayName, avatarUrl, inviteCode]
       );
       user = insertRes.rows[0];
       console.log(`[AUTH] New Telegram user created: ${user.name} (${user.email}), code: ${user.invite_code}`);
@@ -162,13 +298,14 @@ app.post('/api/auth/telegram', async (req, res) => {
       user = userRes.rows[0];
       const updateRes = await query(
         `UPDATE users
-         SET google_id = COALESCE($1, google_id),
-             name = COALESCE($2, name),
-             avatar_url = COALESCE($3, avatar_url),
+         SET telegram_id = COALESCE($1, telegram_id),
+             google_id = COALESCE($2, google_id),
+             name = COALESCE($3, name),
+             avatar_url = COALESCE($4, avatar_url),
              updated_at = NOW()
-         WHERE id = $4
+         WHERE id = $5
          RETURNING *`,
-        [googleId, displayName, avatarUrl, user.id]
+        [tgId || cleanId, googleId, displayName, avatarUrl, user.id]
       );
       user = updateRes.rows[0];
     }
@@ -187,6 +324,62 @@ app.post('/api/auth/telegram', async (req, res) => {
   } catch (err) {
     console.error('[AUTH] Telegram auth error:', err);
     res.status(500).json({ error: 'Внутренняя ошибка авторизации через Telegram' });
+  }
+});
+
+// Apple Sign In (App Store Guideline 4.8 compliant)
+app.post('/api/auth/apple', async (req, res) => {
+  try {
+    const { appleId, email, fullName, identityToken } = req.body;
+    if (!appleId && !email && !identityToken) {
+      return res.status(400).json({ error: 'Требуется appleId или identityToken' });
+    }
+
+    const cleanAppleId = appleId || (identityToken ? `apple_${crypto.createHash('sha256').update(identityToken).digest('hex').slice(0, 16)}` : `apple_user_${Date.now()}`);
+    const userEmail = email || `apple_${cleanAppleId.slice(-8)}@privaterelay.appleid.com`;
+    const displayName = fullName || 'Пользователь Apple';
+
+    let userRes = await query('SELECT * FROM users WHERE apple_id = $1 OR email = $2', [cleanAppleId, userEmail]);
+    let user;
+
+    if (userRes.rows.length === 0) {
+      const inviteCode = generateInviteCode(6);
+      const insertRes = await query(
+        `INSERT INTO users (apple_id, email, name, invite_code)
+         VALUES ($1, $2, $3, $4)
+         RETURNING *`,
+        [cleanAppleId, userEmail, displayName, inviteCode]
+      );
+      user = insertRes.rows[0];
+      console.log(`[AUTH] New Apple user created: ${user.name} (${user.email}), code: ${user.invite_code}`);
+    } else {
+      user = userRes.rows[0];
+      const updateRes = await query(
+        `UPDATE users
+         SET apple_id = COALESCE($1, apple_id),
+             name = COALESCE($2, name),
+             updated_at = NOW()
+         WHERE id = $3
+         RETURNING *`,
+        [cleanAppleId, displayName, user.id]
+      );
+      user = updateRes.rows[0];
+    }
+
+    const token = signUserToken(user);
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        avatarUrl: user.avatar_url,
+        inviteCode: user.invite_code,
+      },
+    });
+  } catch (err) {
+    console.error('[AUTH] Apple auth error:', err);
+    res.status(500).json({ error: 'Внутренняя ошибка авторизации через Apple' });
   }
 });
 
@@ -1005,6 +1198,32 @@ if (fs.existsSync(distPath)) {
 async function start() {
   try {
     await waitForDb();
+
+    // Auto-migrate database schema for Telegram deep link & Apple auth
+    try {
+      await query(`
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_id VARCHAR(255);
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_id VARCHAR(255);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_users_telegram_id ON users(telegram_id) WHERE telegram_id IS NOT NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_users_apple_id ON users(apple_id) WHERE apple_id IS NOT NULL;
+
+        CREATE TABLE IF NOT EXISTS telegram_auth_sessions (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            auth_code VARCHAR(64) UNIQUE NOT NULL,
+            user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+            telegram_id VARCHAR(64),
+            telegram_user JSONB,
+            status VARCHAR(32) DEFAULT 'pending',
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            expires_at TIMESTAMPTZ DEFAULT NOW() + INTERVAL '15 minutes'
+        );
+        CREATE INDEX IF NOT EXISTS idx_tg_auth_code ON telegram_auth_sessions(auth_code);
+      `);
+      console.log('✅ [DB] Schema migrations applied (telegram_id, apple_id, telegram_auth_sessions)');
+    } catch (migErr) {
+      console.warn('[DB] Migration note:', migErr.message);
+    }
+
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`🚀 [API] How Am I Server listening on http://0.0.0.0:${PORT}`);
     });

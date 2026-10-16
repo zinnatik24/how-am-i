@@ -149,6 +149,49 @@ export async function loginWithTelegramApi(params: {
   return data;
 }
 
+// 2c. Telegram Bot Deep Link Session Creation
+export async function createTelegramAuthSessionApi(): Promise<{
+  success: boolean;
+  authCode: string;
+  botUrl: string;
+  botUsername: string;
+}> {
+  return await apiFetch('/api/auth/telegram/session', {
+    method: 'POST',
+  });
+}
+
+// 2d. Telegram Bot Session Status Polling
+export async function checkTelegramAuthSessionStatusApi(
+  code: string
+): Promise<{ completed: boolean; status?: string; token?: string; user?: UserProfile }> {
+  const res = await apiFetch<{ completed: boolean; status?: string; token?: string; user?: UserProfile }>(
+    `/api/auth/telegram/session/status?code=${encodeURIComponent(code)}`,
+    { method: 'GET' }
+  );
+  if (res.completed && res.token && res.user) {
+    await setStoredToken(res.token);
+    await setStoredUser(res.user);
+  }
+  return res;
+}
+
+// 2e. Apple Sign In (App Store Guideline 4.8 compliant)
+export async function loginWithAppleApi(params: {
+  appleId?: string;
+  email?: string;
+  fullName?: string;
+  identityToken?: string;
+}): Promise<{ token: string; user: UserProfile }> {
+  const data = await apiFetch<{ token: string; user: UserProfile }>('/api/auth/apple', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+  await setStoredToken(data.token);
+  await setStoredUser(data.user);
+  return data;
+}
+
 // 3. Current User Profile
 export async function fetchMe(): Promise<{ user: UserProfile; partners: PartnerProfile[] }> {
   const data = await apiFetch<{ user: UserProfile; partners: PartnerProfile[] }>('/api/auth/me', {

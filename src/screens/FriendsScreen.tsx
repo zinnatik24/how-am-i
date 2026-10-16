@@ -27,6 +27,7 @@ import { getLocalizedEmotionName, getLocalizedContextTag } from '../utils/locali
 import { getCheckIns } from '../storage/checkInStorage';
 import { getEmotionsInsight } from '../utils/emotionInsight';
 import { triggerHaptic } from '../utils/haptics';
+import { QuadrantIcon } from '../components/QuadrantIcon';
 
 interface FriendsScreenProps {
   latestCheckIn?: CheckInRecord;
@@ -1069,25 +1070,25 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
                             </View>
                           </View>
                         </View>
-                        <Text style={{ fontSize: 18 }}>
-                          {emotionsList
-                            .map((em) => getQuadrantEmoji(em.quadrantId || data.quadrant))
-                            .join(' ')}
-                        </Text>
+                        <View style={{ flexDirection: 'row', gap: 4, alignItems: 'center' }}>
+                          {emotionsList.map((em, i) => (
+                            <QuadrantIcon key={`q_${i}`} quadrantId={em.quadrantId || data.quadrant} size={18} />
+                          ))}
+                        </View>
                       </View>
 
                       {/* Emotions Badges (supports 1, 2, or 3 emotions) */}
                       <View style={styles.checkinEmotionsWrap}>
                         {emotionsList.map((em, emIdx) => {
                           const emColor = getQuadrantColor(em.quadrantId || data.quadrant);
-                          const emEmoji = getQuadrantEmoji(em.quadrantId || data.quadrant);
                           return (
                             <View
                               key={`em_${emIdx}_${em.id}`}
-                              style={[styles.checkinMoodPill, { backgroundColor: emColor }]}
+                              style={[styles.checkinMoodPill, { backgroundColor: emColor, flexDirection: 'row', alignItems: 'center', gap: 6 }]}
                             >
+                              <QuadrantIcon quadrantId={em.quadrantId || data.quadrant} size={14} color="#FFFFFF" />
                               <Text style={styles.checkinMoodPillText}>
-                                {emEmoji} {em.name.toUpperCase()}
+                                {em.name.toUpperCase()}
                               </Text>
                             </View>
                           );
@@ -1384,8 +1385,11 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
               placeholderTextColor="#718096"
               value={inputText}
               onChangeText={setInputText}
-              multiline
+              multiline={false}
+              numberOfLines={1}
               maxLength={1000}
+              returnKeyType="send"
+              onSubmitEditing={handleSendTextMessage}
             />
 
             {/* Send Button */}
@@ -1520,7 +1524,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
                           <View style={styles.recentShareCardContent}>
                             <View style={styles.recentShareCardTop}>
                               <View style={styles.recentShareEmotionsPill}>
-                                <Text style={styles.recentShareEmoji}>{qEmoji}</Text>
+                                <QuadrantIcon quadrantId={quadId} size={15} />
                                 <Text style={styles.recentShareEmotionTitle} numberOfLines={1}>
                                   {titleStr}
                                 </Text>
@@ -2761,31 +2765,29 @@ const styles = StyleSheet.create({
   // Chat Input Bar
   inputBar: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     paddingHorizontal: 12,
-    paddingTop: 4,
-    paddingBottom: 10,
+    paddingTop: 6,
+    paddingBottom: 6,
     backgroundColor: '#11151C',
     gap: 8,
   },
   textInputField: {
     flex: 1,
     backgroundColor: '#1A202C',
-    borderRadius: 18,
+    borderRadius: 20,
     paddingHorizontal: 14,
-    paddingTop: 10,
-    paddingBottom: 10,
+    paddingVertical: 8,
     color: '#FFFFFF',
     fontSize: 14,
-    maxHeight: 100,
-    minHeight: 42,
+    height: 38,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
   },
   sendBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     justifyContent: 'center',
     alignItems: 'center',
   },

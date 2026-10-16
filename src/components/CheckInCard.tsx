@@ -11,6 +11,7 @@ import { QUADRANTS, getEmotionColor } from '../data/emotionsData';
 import { getLocalizedEmotionName, getLocalizedContextTag } from '../utils/localizationHelper';
 import { getEmotionsInsight } from '../utils/emotionInsight';
 import { triggerHaptic } from '../utils/haptics';
+import { QuadrantIcon } from './QuadrantIcon';
 
 interface CheckInCardProps {
   record: CheckInRecord;
@@ -155,7 +156,7 @@ export const CheckInCard: React.FC<CheckInCardProps> = ({
                 },
               ]}
             >
-              <Text style={styles.emotionPillEmoji}>{emEmoji}</Text>
+              <QuadrantIcon quadrantId={em.quadrantId || record.quadrantId} size={15} />
               <Text style={[styles.emotionPillText, { color: '#FFFFFF' }]}>
                 {localizedName.toUpperCase()}
               </Text>
@@ -243,12 +244,7 @@ export const CheckInCard: React.FC<CheckInCardProps> = ({
               {insight.items.map((item, idx) => (
                 <View key={`ins_${idx}_${item.id}`} style={styles.insightItemCard}>
                   <View style={styles.insightItemHeader}>
-                    <View
-                      style={[
-                        styles.insightItemDot,
-                        { backgroundColor: item.color },
-                      ]}
-                    />
+                    <QuadrantIcon quadrantId={item.quadrantId} size={14} />
                     <Text style={styles.insightItemTitle}>
                       {item.name}
                     </Text>

@@ -189,10 +189,10 @@ function MainApp() {
           styles.tabBar,
           {
             paddingBottom: Platform.select({
-              ios: Math.max(14, insets.bottom + 6),
-              android: Math.max(10, insets.bottom + 6),
-              web: Math.max(14, (insets.bottom || 0) + 6),
-              default: 14,
+              ios: Math.max(6, insets.bottom),
+              android: Math.max(4, insets.bottom),
+              web: Math.max(6, insets.bottom || 0),
+              default: 6,
             }),
           },
         ]}
@@ -205,9 +205,9 @@ function MainApp() {
         >
           <Svg width={28} height={28} viewBox="0 0 28 28">
             <Line
-              x1="3"
+              x1="5"
               y1="14"
-              x2="25"
+              x2="23"
               y2="14"
               stroke={currentTab === 'today' ? '#4FD1C5' : '#718096'}
               strokeWidth={1.8}
@@ -215,9 +215,9 @@ function MainApp() {
             />
             <Line
               x1="14"
-              y1="6"
+              y1="5"
               x2="14"
-              y2="22"
+              y2="23"
               stroke={currentTab === 'today' ? '#4FD1C5' : '#718096'}
               strokeWidth={1.8}
               strokeLinecap="round"
@@ -308,15 +308,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#11151C',
     borderTopWidth: 1,
     borderTopColor: '#1A202C',
-    paddingTop: 10,
-    paddingBottom: 14,
+    paddingTop: 6,
+    paddingBottom: 6,
     paddingHorizontal: 8,
   },
   tabItem: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 6,
+    paddingVertical: 3,
   },
   quickAddButton: {
     width: 48,
