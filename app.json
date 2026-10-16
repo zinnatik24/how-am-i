@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Как я?",
+    "name": "Как Я?",
     "slug": "how-am-i",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -15,7 +15,7 @@
       "bundleIdentifier": "com.howami.app",
       "buildNumber": "1",
       "infoPlist": {
-        "CFBundleDisplayName": "Как я?",
+        "CFBundleDisplayName": "Как Я?",
         "ITSAppUsesNonExemptEncryption": false,
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
@@ -34,7 +34,8 @@
     },
     "web": {
       "favicon": "./assets/favicon.png",
-      "name": "Как я? — Трекер чувств и настроения"
+      "name": "Как Я?",
+      "shortName": "Как Я?"
     },
     "plugins": [
       "expo-localization",
