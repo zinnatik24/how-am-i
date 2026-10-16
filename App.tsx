@@ -5,6 +5,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Platform,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -51,9 +52,35 @@ function MainApp() {
     loadData();
   }, []);
 
+  // Sync tab with URL hash on Web (#today, #friends, #journal, etc.)
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const handleHashChange = () => {
+        const raw = window.location.hash.replace('#', '').toLowerCase();
+        const validTabs: Record<string, TabKey> = {
+          today: 'today',
+          journal: 'journal',
+          friends: 'friends',
+          blizkie: 'friends',
+          trends: 'trends',
+          settings: 'settings',
+        };
+        if (validTabs[raw]) {
+          setCurrentTab(validTabs[raw]);
+        }
+      };
+      handleHashChange();
+      window.addEventListener('hashchange', handleHashChange);
+      return () => window.removeEventListener('hashchange', handleHashChange);
+    }
+  }, []);
+
   const handleTabChange = (tab: TabKey) => {
     triggerHaptic('light');
     setCurrentTab(tab);
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location) {
+      window.location.hash = tab;
+    }
   };
 
   const handleNewCheckInSaved = (record: CheckInRecord) => {
