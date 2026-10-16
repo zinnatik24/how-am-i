@@ -2,6 +2,8 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { Platform, Alert } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import * as Notifications from 'expo-notifications';
+import { CheckInRecord } from '../types';
+import { QUADRANTS } from '../data/emotionsData';
 import {
   UserProfile,
   PartnerProfile,
@@ -79,6 +81,7 @@ interface AuthContextType {
   ) => Promise<{ success: boolean; message?: ChatMessage }>;
   sendCarePing: (partnerId?: string) => Promise<{ success: boolean; message: string }>;
   sendCareReaction: (partnerId: string, reactionType: string, reactionLabel: string) => Promise<{ success: boolean; message: string }>;
+  broadcastCheckinToChat: (record: CheckInRecord) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -402,6 +405,70 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  const broadcastCheckinToChat = (record: CheckInRecord) => {
+    const emotionsList =
+      record.emotions && record.emotions.length > 0
+        ? record.emotions
+        : [
+            {
+              id: record.emotionId,
+              name: record.emotionName || record.emotionId,
+              quadrantId: record.quadrantId,
+              intensity: record.intensity || 2,
+            },
+          ];
+
+    const cleanNote =
+      record.note &&
+      record.note.trim() &&
+      !record.note.trim().toLowerCase().startsWith('отметил')
+        ? record.note.trim()
+        : null;
+
+    const primaryEmotion = emotionsList[0];
+    const quad = QUADRANTS[primaryEmotion?.quadrantId || record.quadrantId];
+
+    const checkinData: ChatCheckinData = {
+      checkin_id: record.id,
+      emotion_id: record.emotionId,
+      emotionNameRu: primaryEmotion?.name || record.emotionName || record.emotionId,
+      quadrant: primaryEmotion?.quadrantId || record.quadrantId,
+      quadrantNameRu: quad?.translations?.ru || record.quadrantId,
+      energy: quad?.energy || 'low',
+      pleasantness: quad?.pleasantness || 'pleasant',
+      intensity: record.intensity || 2,
+      emotions: emotionsList,
+      context_people: record.context?.people || [],
+      context_place: record.context?.location || [],
+      context_activity: record.context?.activity || [],
+      note: cleanNote || undefined,
+      created_at: record.timestamp,
+    };
+
+    const targetPartners =
+      partners.length > 0
+        ? partners
+        : user
+        ? [{ id: 'partner_local', name: 'Партнёр', email: '', avatarUrl: null }]
+        : [];
+
+    targetPartners.forEach((p) => {
+      const optimisticMsg: ChatMessage = {
+        id: `opt_chk_${Date.now()}_${p.id}`,
+        conversation_id: [user?.id || 'me', p.id].sort().join('_'),
+        from_user_id: user?.id || 'me',
+        to_user_id: p.id,
+        type: 'checkin',
+        content: cleanNote,
+        checkin_data: checkinData,
+        created_at: record.timestamp,
+        from_name: user?.name,
+        from_avatar: user?.avatarUrl || undefined,
+      };
+      setChatMessages((prev) => [...prev, optimisticMsg]);
+    });
+  };
+
   const signOut = async () => {
     await removeStoredToken();
     setUser(null);
@@ -437,6 +504,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         sendChatMessage,
         sendCarePing,
         sendCareReaction,
+        broadcastCheckinToChat,
       }}
     >
       {children}

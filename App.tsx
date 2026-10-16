@@ -25,7 +25,7 @@ type TabKey = 'today' | 'journal' | 'friends' | 'trends' | 'settings';
 
 function MainApp() {
   const { t } = useLanguage();
-  const { refreshFeed } = useAuth();
+  const { refreshFeed, broadcastCheckinToChat } = useAuth();
   const [currentTab, setCurrentTab] = useState<TabKey>('today');
   const [checkIns, setCheckIns] = useState<CheckInRecord[]>([]);
   const [isCheckInOpen, setIsCheckInOpen] = useState<boolean>(false);
@@ -58,6 +58,7 @@ function MainApp() {
 
   const handleNewCheckInSaved = (record: CheckInRecord) => {
     setCheckIns((prev) => [record, ...prev]);
+    broadcastCheckinToChat(record);
     // Immediately refresh partner feed and chats so checkin appears in chat
     setTimeout(() => {
       refreshFeed();
