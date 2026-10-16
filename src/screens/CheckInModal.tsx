@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Modal,
   Platform,
@@ -23,8 +23,7 @@ import { QUADRANTS, getEmotionColor } from '../data/emotionsData';
 import { MoodMeterPlane } from '../components/MoodMeterPlane';
 import { ContextSelector } from '../components/ContextSelector';
 import { QuadrantCircle } from '../components/QuadrantCircle';
-import { useLanguage } from '../i18n/LanguageContext';
-import { saveCheckIn } from '../storage/checkInStorage';
+import { saveCheckIn, getDefaultShareWithPartners } from '../storage/checkInStorage';
 import { saveCheckinToCloud } from '../services/api';
 import { triggerHaptic } from '../utils/haptics';
 
@@ -54,6 +53,15 @@ export const CheckInModal: React.FC<CheckInModalProps> = ({
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [shareWithPartners, setShareWithPartners] = useState<boolean>(true);
 
+  // Load default sharing preference on modal open
+  useEffect(() => {
+    if (visible) {
+      getDefaultShareWithPartners().then((val) => {
+        setShareWithPartners(val);
+      });
+    }
+  }, [visible]);
+
   const resetState = () => {
     setCurrentView('quadrants');
     setFocusedQuadrant(null);
@@ -62,7 +70,9 @@ export const CheckInModal: React.FC<CheckInModalProps> = ({
     setSelectedLocation([]);
     setSelectedActivity([]);
     setNoteText('');
-    setShareWithPartners(true);
+    getDefaultShareWithPartners().then((val) => {
+      setShareWithPartners(val);
+    });
     setIsSaving(false);
   };
 
@@ -317,38 +327,6 @@ export const CheckInModal: React.FC<CheckInModalProps> = ({
               contentContainerStyle={styles.detailsScrollContent}
               showsVerticalScrollIndicator={false}
             >
-              {/* TOP PRIVACY TUMBLER */}
-              <View style={styles.privacyCard}>
-                <View style={styles.privacyCardLeft}>
-                  <View style={[styles.privacyIconCircle, !shareWithPartners && { backgroundColor: '#2D3748' }]}>
-                    <Ionicons
-                      name={shareWithPartners ? "people" : "lock-closed"}
-                      size={20}
-                      color={shareWithPartners ? "#4FD1C5" : "#A0AEC0"}
-                    />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.privacyTitle}>
-                      {language === 'ru' ? 'Показывать близкому кругу' : 'Share with inner circle'}
-                    </Text>
-                    <Text style={styles.privacyDesc}>
-                      {shareWithPartners
-                        ? (language === 'ru' ? 'Близкие увидят этот чекин и получат push' : 'Partners will see this and get notified')
-                        : (language === 'ru' ? 'Личный чекин (виден только вам)' : 'Private (only visible to you)')}
-                    </Text>
-                  </View>
-                </View>
-                <Switch
-                  value={shareWithPartners}
-                  onValueChange={(val) => {
-                    triggerHaptic('light');
-                    setShareWithPartners(val);
-                  }}
-                  trackColor={{ false: '#4A5568', true: '#319795' }}
-                  thumbColor={shareWithPartners ? '#4FD1C5' : '#CBD5E0'}
-                />
-              </View>
-
               {/* SECTION 1: Selected Emotions (up to 3) */}
               <View style={styles.sectionCard}>
                 <View style={styles.sectionHeaderRow}>
@@ -487,6 +465,90 @@ export const CheckInModal: React.FC<CheckInModalProps> = ({
                   onToggleTag={handleToggleTag}
                 />
               </View>
+
+              {/* SECTION 4: END OF CHECK-IN SHARING WITH PARTNERS (Interactive Manual Trigger) */}
+              <TouchableOpacity
+                style={[
+                  styles.privacyCard,
+                  !shareWithPartners ? styles.privacyCardOff : styles.privacyCardOn,
+                ]}
+                activeOpacity={0.85}
+                onPress={() => {
+                  triggerHaptic('light');
+                  setShareWithPartners(!shareWithPartners);
+                }}
+              >
+                <View style={styles.privacyCardLeft}>
+                  <View
+                    style={[
+                      styles.privacyIconCircle,
+                      !shareWithPartners && styles.privacyIconCircleOff,
+                      shareWithPartners && styles.privacyIconCircleOn,
+                    ]}
+                  >
+                    <Ionicons
+                      name={shareWithPartners ? 'people' : 'lock-closed'}
+                      size={20}
+                      color={shareWithPartners ? '#4FD1C5' : '#F59E0B'}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                      <Text style={styles.privacyTitle}>
+                        {shareWithPartners
+                          ? (language === 'ru' ? 'Отправить близким' : 'Share with partners')
+                          : (language === 'ru' ? 'Личный чекин' : 'Private check-in')}
+                      </Text>
+                      <View
+                        style={[
+                          styles.privacyStatusBadge,
+                          !shareWithPartners ? styles.privacyBadgeOff : styles.privacyBadgeOn,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.privacyStatusBadgeText,
+                            !shareWithPartners ? styles.privacyBadgeTextOff : styles.privacyBadgeTextOn,
+                          ]}
+                        >
+                          {shareWithPartners
+                            ? (language === 'ru' ? 'Отправится' : 'Will send')
+                            : (language === 'ru' ? 'Только мне' : 'Only me')}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <Text style={styles.privacyDesc}>
+                      {shareWithPartners
+                        ? (language === 'ru'
+                            ? 'Близкие увидят этот чекин в ленте и получат уведомление'
+                            : 'Partners will see this check-in in feed and receive a push')
+                        : (language === 'ru'
+                            ? 'По умолчанию выключено. Потяните тумблер, чтобы отправить близким'
+                            : 'Disabled by default. Pull the switch to send to partners')}
+                    </Text>
+
+                    {!shareWithPartners && (
+                      <View style={styles.privacyActionPrompt}>
+                        <Ionicons name="hand-right-outline" size={13} color="#4FD1C5" />
+                        <Text style={styles.privacyActionPromptText}>
+                          {language === 'ru' ? 'Нажмите или потяните тумблер для отправки' : 'Tap or toggle switch to send'}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+
+                <Switch
+                  value={shareWithPartners}
+                  onValueChange={(val) => {
+                    triggerHaptic('light');
+                    setShareWithPartners(val);
+                  }}
+                  trackColor={{ false: '#4A5568', true: '#319795' }}
+                  thumbColor={shareWithPartners ? '#4FD1C5' : '#CBD5E0'}
+                />
+              </TouchableOpacity>
 
               {/* Extra spacing so content is never covered by sticky bottom bar */}
               <View style={{ height: 110 }} />
@@ -784,7 +846,15 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#2D3748',
+  },
+  privacyCardOn: {
+    borderColor: '#319795',
+    backgroundColor: 'rgba(49, 151, 149, 0.08)',
+  },
+  privacyCardOff: {
+    borderColor: '#3B485A',
+    backgroundColor: '#0F131A',
+    borderStyle: 'dashed',
   },
   privacyCardLeft: {
     flexDirection: 'row',
@@ -797,19 +867,55 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: 'rgba(79, 209, 197, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  privacyIconCircleOn: {
+    backgroundColor: 'rgba(79, 209, 197, 0.15)',
+  },
+  privacyIconCircleOff: {
+    backgroundColor: '#1E2530',
   },
   privacyTitle: {
     fontSize: 14,
     fontWeight: '700',
     color: '#F7FAFC',
-    marginBottom: 2,
   },
   privacyDesc: {
     fontSize: 11,
-    color: '#A0AEC0',
+    color: '#94A3B8',
     lineHeight: 15,
+  },
+  privacyStatusBadge: {
+    paddingVertical: 1,
+    paddingHorizontal: 6,
+    borderRadius: 6,
+  },
+  privacyBadgeOn: {
+    backgroundColor: 'rgba(79, 209, 197, 0.15)',
+  },
+  privacyBadgeOff: {
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+  },
+  privacyStatusBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  privacyBadgeTextOn: {
+    color: '#4FD1C5',
+  },
+  privacyBadgeTextOff: {
+    color: '#FBBF24',
+  },
+  privacyActionPrompt: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  privacyActionPromptText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#4FD1C5',
   },
 });

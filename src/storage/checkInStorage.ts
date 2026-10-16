@@ -4,7 +4,26 @@ import { CheckInRecord, SupportedLanguage } from '../types';
 const STORAGE_KEYS = {
   CHECK_INS: '@how_we_feel_checkins_v1',
   LANGUAGE: '@how_we_feel_language_v1',
+  DEFAULT_SHARE_WITH_PARTNERS: '@how_am_i_default_share_partners_v1',
 };
+
+export async function getDefaultShareWithPartners(): Promise<boolean> {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.DEFAULT_SHARE_WITH_PARTNERS);
+    if (raw === null) return true; // Default to true initially
+    return raw === 'true';
+  } catch (error) {
+    return true;
+  }
+}
+
+export async function setDefaultShareWithPartners(enabled: boolean): Promise<void> {
+  try {
+    await AsyncStorage.setItem(STORAGE_KEYS.DEFAULT_SHARE_WITH_PARTNERS, enabled ? 'true' : 'false');
+  } catch (error) {
+    console.error('Failed to save default share preference:', error);
+  }
+}
 
 export async function getCheckIns(): Promise<CheckInRecord[]> {
   try {

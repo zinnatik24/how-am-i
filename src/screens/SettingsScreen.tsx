@@ -11,12 +11,17 @@ import {
   Modal,
   Linking,
   TextInput,
+  Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLanguage } from '../i18n/LanguageContext';
 import { useAuth } from '../context/AuthContext';
 import { SupportedLanguage, CheckInRecord } from '../types';
-import { clearAllCheckIns } from '../storage/checkInStorage';
+import {
+  clearAllCheckIns,
+  getDefaultShareWithPartners,
+  setDefaultShareWithPartners,
+} from '../storage/checkInStorage';
 import { triggerHaptic } from '../utils/haptics';
 import {
   createTelegramAuthSessionApi,
@@ -202,6 +207,21 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onCheckInsUpdate
 
   // Copied toast banner
   const [isCopiedToast, setIsCopiedToast] = useState(false);
+
+  // Default sharing with partners setting
+  const [defaultShareWithPartners, setDefaultShareWithPartnersState] = useState(true);
+
+  useEffect(() => {
+    getDefaultShareWithPartners().then((val) => {
+      setDefaultShareWithPartnersState(val);
+    });
+  }, []);
+
+  const handleToggleDefaultShare = async (val: boolean) => {
+    triggerHaptic('light');
+    setDefaultShareWithPartnersState(val);
+    await setDefaultShareWithPartners(val);
+  };
 
   // Telegram Login State
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState(false);
@@ -669,6 +689,78 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onCheckInsUpdate
             </View>
           )}
         </View>
+      </View>
+
+      {/* 2b. DEFAULT SHARING WITH PARTNERS SETTING */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>
+          {isRu ? 'Приватность и близкие' : 'Privacy & Partners'}
+        </Text>
+        <Text style={styles.sectionSubtitle}>
+          {isRu
+            ? 'Настройте отправку чекинов вашим партнерам по умолчанию'
+            : 'Configure default check-in sharing behavior for your inner circle'}
+        </Text>
+
+        <TouchableOpacity
+          style={styles.shareSettingCard}
+          activeOpacity={0.85}
+          onPress={() => handleToggleDefaultShare(!defaultShareWithPartners)}
+        >
+          <View style={styles.shareSettingLeft}>
+            <View
+              style={[
+                styles.shareSettingIconCircle,
+                !defaultShareWithPartners && styles.shareSettingIconCircleOff,
+              ]}
+            >
+              <Ionicons
+                name={defaultShareWithPartners ? 'people' : 'lock-closed'}
+                size={20}
+                color={defaultShareWithPartners ? '#4FD1C5' : '#A0AEC0'}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                <Text style={styles.shareSettingTitle}>
+                  {isRu ? 'Отправлять чекины близким' : 'Share check-ins with partners'}
+                </Text>
+                <View
+                  style={[
+                    styles.shareSettingBadge,
+                    !defaultShareWithPartners ? styles.shareSettingBadgeOff : styles.shareSettingBadgeOn,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.shareSettingBadgeText,
+                      !defaultShareWithPartners ? styles.shareSettingBadgeTextOff : styles.shareSettingBadgeTextOn,
+                    ]}
+                  >
+                    {defaultShareWithPartners
+                      ? (isRu ? 'Да' : 'Yes')
+                      : (isRu ? 'Нет' : 'No')}
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.shareSettingDesc}>
+                {defaultShareWithPartners
+                  ? (isRu
+                      ? 'Включено по умолчанию: новые чекины сразу видны близким'
+                      : 'Enabled by default: new check-ins are visible to your partners')
+                  : (isRu
+                      ? 'Выключено по умолчанию: чекины личные. В конце чекина нужно включить тумблер вручную'
+                      : 'Disabled by default: check-ins are private. You pull the switch at the end')}
+              </Text>
+            </View>
+          </View>
+          <Switch
+            value={defaultShareWithPartners}
+            onValueChange={handleToggleDefaultShare}
+            trackColor={{ false: '#4A5568', true: '#319795' }}
+            thumbColor={defaultShareWithPartners ? '#4FD1C5' : '#CBD5E0'}
+          />
+        </TouchableOpacity>
       </View>
 
       {/* 3. EXPANDABLE YALE METHODOLOGY SECTION (СВЕРНУТЫЙ ТЕКСТ) */}
@@ -1563,6 +1655,65 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     textAlign: 'center',
     marginTop: 6,
+  },
+  shareSettingCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#161C24',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#263040',
+  },
+  shareSettingLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+    marginRight: 10,
+  },
+  shareSettingIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(79, 209, 197, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shareSettingIconCircleOff: {
+    backgroundColor: '#232A36',
+  },
+  shareSettingTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#F7FAFC',
+  },
+  shareSettingDesc: {
+    fontSize: 11,
+    color: '#94A3B8',
+    lineHeight: 15,
+  },
+  shareSettingBadge: {
+    paddingVertical: 1,
+    paddingHorizontal: 6,
+    borderRadius: 6,
+  },
+  shareSettingBadgeOn: {
+    backgroundColor: 'rgba(79, 209, 197, 0.15)',
+  },
+  shareSettingBadgeOff: {
+    backgroundColor: '#2D3748',
+  },
+  shareSettingBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  shareSettingBadgeTextOn: {
+    color: '#4FD1C5',
+  },
+  shareSettingBadgeTextOff: {
+    color: '#A0AEC0',
   },
 });
 
