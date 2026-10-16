@@ -36,13 +36,7 @@ function MainApp() {
     async function loadData() {
       try {
         const stored = await getCheckIns();
-        if (stored.length === 0) {
-          // Initialize with helpful demo data on very first launch
-          const seeded = await seedSampleData();
-          setCheckIns(seeded);
-        } else {
-          setCheckIns(stored);
-        }
+        setCheckIns(stored);
       } catch (e) {
         console.error('Failed to load check-ins', e);
       } finally {

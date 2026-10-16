@@ -404,32 +404,9 @@ export const MoodMeterPlane: React.FC<MoodMeterPlaneProps> = ({
         </TouchableOpacity>
       )}
 
-      {/* Floating Quadrants Quick-Jump & Recenter (Top-Right under header) */}
+      {/* Floating Recenter (Top-Right under header) */}
       {!isSearchOpen && (
         <View style={styles.floatingControlsGroup}>
-          <View style={styles.quadrantJumpPill}>
-            <TouchableOpacity
-              onPress={() => jumpToQuadrant('high_unpleasant')}
-              style={[styles.quadrantDotBtn, { backgroundColor: '#FB7185' }]}
-              activeOpacity={0.7}
-            />
-            <TouchableOpacity
-              onPress={() => jumpToQuadrant('high_pleasant')}
-              style={[styles.quadrantDotBtn, { backgroundColor: '#FBBF24' }]}
-              activeOpacity={0.7}
-            />
-            <TouchableOpacity
-              onPress={() => jumpToQuadrant('low_unpleasant')}
-              style={[styles.quadrantDotBtn, { backgroundColor: '#38BDF8' }]}
-              activeOpacity={0.7}
-            />
-            <TouchableOpacity
-              onPress={() => jumpToQuadrant('low_pleasant')}
-              style={[styles.quadrantDotBtn, { backgroundColor: '#4ADE80' }]}
-              activeOpacity={0.7}
-            />
-          </View>
-
           <TouchableOpacity
             onPress={recenter}
             style={styles.recenterButton}

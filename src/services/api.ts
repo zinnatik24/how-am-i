@@ -24,6 +24,8 @@ export interface PartnerProfile {
   email: string;
   avatarUrl?: string | null;
   status: string;
+  isOnline?: boolean;
+  lastSeenAt?: string | null;
 }
 
 export interface CloudCheckin {
@@ -262,6 +264,7 @@ export interface ChatMessage {
   created_at: string;
   from_name?: string;
   from_avatar?: string;
+  is_read?: boolean;
 }
 
 export async function fetchMessagesApi(partnerId?: string): Promise<{ messages: ChatMessage[]; conversationId: string | null }> {

@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CheckInRecord, QuadrantId } from '../types';
-import { QUADRANTS } from '../data/emotionsData';
+import { QUADRANTS, EMOTIONS, getEmotionColor } from '../data/emotionsData';
 import { useLanguage } from '../i18n/LanguageContext';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -24,6 +24,8 @@ import {
   PartnerProfile,
 } from '../services/api';
 import { getLocalizedEmotionName, getLocalizedContextTag } from '../utils/localizationHelper';
+import { getCheckIns } from '../storage/checkInStorage';
+import { getEmotionsInsight } from '../utils/emotionInsight';
 import { triggerHaptic } from '../utils/haptics';
 
 interface FriendsScreenProps {
@@ -78,6 +80,13 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
   // Demo Login modal for development/testing
   const [isDemoModalOpen, setIsDemoModalOpen] = useState<boolean>(false);
 
+  // Share checkin modal state & 3 recent checkins
+  const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
+  const [recentCheckIns, setRecentCheckIns] = useState<CheckInRecord[]>([]);
+
+  // Expanded card state for emotion descriptions & synthesis
+  const [expandedCheckinIds, setExpandedCheckinIds] = useState<Record<string, boolean>>({});
+
   // Auto-scroll to bottom when messages update
   useEffect(() => {
     if (chatMessages && chatMessages.length > 0) {
@@ -87,10 +96,16 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
     }
   }, [chatMessages.length]);
 
-  // If active partner is selected, periodically refresh their messages
+  // If active partner is selected, periodically refresh their messages (live chat polling)
   useEffect(() => {
     if (selectedPartner) {
       fetchChatMessages(selectedPartner.id);
+
+      const interval = setInterval(() => {
+        fetchChatMessages(selectedPartner.id);
+      }, 3500);
+
+      return () => clearInterval(interval);
     }
   }, [selectedPartner]);
 
@@ -305,6 +320,133 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
     setTimeout(() => {
       scrollViewRef.current?.scrollToEnd({ animated: true });
     }, 100);
+  };
+
+  // Open Share Mood Bottom Sheet Modal (loads up to 3 recent check-ins)
+  const handleOpenShareModal = async () => {
+    triggerHaptic('medium');
+    try {
+      const list = await getCheckIns();
+      setRecentCheckIns(list.slice(0, 3));
+    } catch (e) {
+      setRecentCheckIns([]);
+    }
+    setIsShareModalOpen(true);
+  };
+
+  // Share specific recent check-in into the chat
+  const handleShareSpecificCheckIn = async (checkin: CheckInRecord) => {
+    if (!selectedPartner) return;
+    triggerHaptic('success');
+
+    const emotionsList =
+      checkin.emotions && checkin.emotions.length > 0
+        ? checkin.emotions.map((e) => ({
+            id: e.id,
+            name: e.name,
+            quadrantId: e.quadrantId,
+            intensity: e.intensity || 2,
+          }))
+        : [
+            {
+              id: checkin.emotionId,
+              name: checkin.emotionName || checkin.emotionId,
+              quadrantId: checkin.quadrantId,
+              intensity: checkin.intensity || 2,
+            },
+          ];
+
+    const primaryEmotion = emotionsList[0];
+    const quadId: QuadrantId =
+      primaryEmotion?.quadrantId || checkin.quadrantId || 'low_pleasant';
+    const quad = QUADRANTS[quadId];
+    const quadName = quad?.translations?.ru || quadId;
+    const emotionRu =
+      primaryEmotion?.name || checkin.emotionName || checkin.emotionId;
+
+    const cleanNote =
+      checkin.note &&
+      checkin.note.trim() &&
+      !checkin.note.trim().toLowerCase().startsWith('отметил')
+        ? checkin.note.trim()
+        : '';
+
+    const checkinData: ChatCheckinData = {
+      checkin_id: checkin.id,
+      emotion_id: checkin.emotionId,
+      emotionNameRu: emotionRu,
+      quadrant: quadId,
+      quadrantNameRu: quadName,
+      energy: quad?.energy || 'low',
+      pleasantness: quad?.pleasantness || 'pleasant',
+      intensity: checkin.intensity || 2,
+      emotions: emotionsList,
+      context_people: checkin.context?.people || [],
+      context_place: checkin.context?.location || [],
+      context_activity: checkin.context?.activity || [],
+      note: cleanNote,
+      created_at: checkin.timestamp,
+    };
+
+    setIsShareModalOpen(false);
+
+    const titleStr = emotionsList.map((e) => e.name).join(', ') || emotionRu;
+    setLastSentBanner(`💛 Вы отправили настроение «${titleStr}»`);
+    setTimeout(() => setLastSentBanner(null), 3000);
+
+    await sendChatMessage(
+      selectedPartner.id,
+      cleanNote,
+      'checkin',
+      checkinData
+    );
+
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 100);
+  };
+
+  // Helper to check if partner is currently online
+  const isPartnerOnline = (p?: PartnerProfile | null) => {
+    if (!p) return false;
+    if (p.isOnline === true) return true;
+    const inList = partners.find((item) => item.id === p.id);
+    if (inList?.isOnline === true) return true;
+    const inConv = conversations.find((c) => c.partner?.id === p.id);
+    if ((inConv?.partner as any)?.is_online === true || inConv?.partner?.isOnline === true) return true;
+    return false;
+  };
+
+  // Telegram-style message delivery/read status indicator
+  const renderMessageStatus = (msg: ChatMessage) => {
+    if (msg.id.startsWith('opt_')) {
+      return (
+        <Ionicons
+          name="time-outline"
+          size={12}
+          color="#718096"
+          style={{ marginLeft: 4 }}
+        />
+      );
+    }
+    if (msg.is_read) {
+      return (
+        <Ionicons
+          name="checkmark-done"
+          size={14}
+          color="#4FD1C5"
+          style={{ marginLeft: 4 }}
+        />
+      );
+    }
+    return (
+      <Ionicons
+        name="checkmark"
+        size={13}
+        color="#94A3B8"
+        style={{ marginLeft: 4 }}
+      />
+    );
   };
 
   // Care Ping: «Спросить: Как ты?»
@@ -721,7 +863,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
                         {partner.name.charAt(0).toUpperCase()}
                       </Text>
                     </View>
-                    <View style={styles.chatRowOnlineDot} />
+                    {isPartnerOnline(partner) && <View style={styles.chatRowOnlineDot} />}
                   </View>
 
                   {/* Middle: Partner Name, Mood Capsule, Last Message */}
@@ -814,7 +956,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
                   <Text style={styles.partnerHeaderName} numberOfLines={1}>
                     {selectedPartner.name}
                   </Text>
-                  <View style={styles.livePulseDot} />
+                  {isPartnerOnline(selectedPartner) && <View style={styles.livePulseDot} />}
                 </View>
 
                 {/* Partner Latest Mood Capsule */}
@@ -969,9 +1111,12 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
                             <Text style={styles.checkinCardSenderName}>
                               {isMe ? 'Вы отметили настроение' : `${selectedPartner.name} отметил(а) настроение`}
                             </Text>
-                            <Text style={styles.checkinCardTime}>
-                              {formatMessageTime(msg.created_at)}
-                            </Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                              <Text style={styles.checkinCardTime}>
+                                {formatMessageTime(msg.created_at)}
+                              </Text>
+                              {isMe && renderMessageStatus(msg)}
+                            </View>
                           </View>
                         </View>
                         <Text style={{ fontSize: 18 }}>
@@ -1036,6 +1181,75 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
                           ))}
                         </View>
                       )}
+
+                      {/* Psychological Emotion Insight & Educational Breakdown */}
+                      {(() => {
+                        const insight = getEmotionsInsight(emotionsList, language);
+                        const isCardExpanded = !!expandedCheckinIds[msg.id];
+                        return (
+                          <View style={styles.insightSection}>
+                            <TouchableOpacity
+                              style={styles.insightToggleBtn}
+                              onPress={() => {
+                                triggerHaptic('light');
+                                setExpandedCheckinIds((prev) => ({
+                                  ...prev,
+                                  [msg.id]: !prev[msg.id],
+                                }));
+                              }}
+                              activeOpacity={0.7}
+                            >
+                              <Ionicons
+                                name={isCardExpanded ? 'book' : 'book-outline'}
+                                size={14}
+                                color="#4FD1C5"
+                              />
+                              <Text style={styles.insightToggleBtnText}>
+                                {isCardExpanded ? 'Скрыть разбор чувств' : 'О чём эти чувства?'}
+                              </Text>
+                              <Ionicons
+                                name={isCardExpanded ? 'chevron-up' : 'chevron-down'}
+                                size={14}
+                                color="#4FD1C5"
+                              />
+                            </TouchableOpacity>
+
+                            {isCardExpanded && (
+                              <View style={styles.insightExpandedBox}>
+                                {/* Coherent synthesis narrative */}
+                                <Text style={styles.insightNarrativeText}>
+                                  {insight.narrative}
+                                </Text>
+
+                                {/* Detailed breakdowns for each emotion */}
+                                <View style={styles.insightItemsList}>
+                                  {insight.items.map((item, idx) => (
+                                    <View key={`ins_${idx}_${item.id}`} style={styles.insightItemCard}>
+                                      <View style={styles.insightItemHeader}>
+                                        <View
+                                          style={[
+                                            styles.insightItemDot,
+                                            { backgroundColor: item.color },
+                                          ]}
+                                        />
+                                        <Text style={styles.insightItemTitle}>
+                                          {item.name}
+                                        </Text>
+                                        <Text style={styles.insightItemQuadName}>
+                                          {item.quadrantName}
+                                        </Text>
+                                      </View>
+                                      <Text style={styles.insightItemDefText}>
+                                        {item.definition}
+                                      </Text>
+                                    </View>
+                                  ))}
+                                </View>
+                              </View>
+                            )}
+                          </View>
+                        );
+                      })()}
 
                       {/* Interactive Care Actions Directly on Partner's Check-in Card */}
                       {!isMe && (
@@ -1186,14 +1400,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
                       <Text style={styles.textMessageTime}>
                         {formatMessageTime(msg.created_at)}
                       </Text>
-                      {isMe && (
-                        <Ionicons
-                          name="checkmark-done"
-                          size={13}
-                          color="#4FD1C5"
-                          style={{ marginLeft: 3 }}
-                        />
-                      )}
+                      {isMe && renderMessageStatus(msg)}
                     </View>
                   </View>
                 </View>
@@ -1201,84 +1408,23 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
             })}
           </ScrollView>
 
-          {/* C. QUICK CARE CHIPS HORIZONTAL BAR */}
-          <View style={styles.quickCareBar}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.quickCareScroll}
+          {/* C. WIDE BUTTON: ПОДЕЛИТЬСЯ СОСТОЯНИЕМ (Заменяет старые мелкие кнопки) */}
+          <View style={styles.shareMoodBar}>
+            <TouchableOpacity
+              style={styles.wideShareButton}
+              onPress={handleOpenShareModal}
+              activeOpacity={0.85}
             >
-              <TouchableOpacity
-                style={styles.quickCareChip}
-                onPress={handleSendPing}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.quickCareChipEmoji}>💭</Text>
-                <Text style={styles.quickCareChipText}>«Как ты?»</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.quickCareChip}
-                onPress={() =>
-                  handleSendCareReaction('hug', '🤗 Теплые объятия для тебя!')
-                }
-                activeOpacity={0.7}
-              >
-                <Text style={styles.quickCareChipEmoji}>🤗</Text>
-                <Text style={styles.quickCareChipText}>Обнять</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.quickCareChip}
-                onPress={() =>
-                  handleSendCareReaction('with_you', '🤍 Я рядом, помни об этом!')
-                }
-                activeOpacity={0.7}
-              >
-                <Text style={styles.quickCareChipEmoji}>🤍</Text>
-                <Text style={styles.quickCareChipText}>Я рядом</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.quickCareChip}
-                onPress={() =>
-                  handleSendCareReaction('proud', '🌟 Горжусь тобой!')
-                }
-                activeOpacity={0.7}
-              >
-                <Text style={styles.quickCareChipEmoji}>🌟</Text>
-                <Text style={styles.quickCareChipText}>Горжусь</Text>
-              </TouchableOpacity>
-
-              {/* «Хочешь поговорить?» PLACED STRICTLY LAST */}
-              <TouchableOpacity
-                style={[styles.quickCareChip, styles.quickCareChipTalk]}
-                onPress={() =>
-                  handleSendCareReaction(
-                    'talk',
-                    '☕ Если захочешь поговорить — я на связи.'
-                  )
-                }
-                activeOpacity={0.7}
-              >
-                <Text style={styles.quickCareChipEmoji}>☕</Text>
-                <Text style={styles.quickCareChipText}>Хочешь поговорить?</Text>
-              </TouchableOpacity>
-            </ScrollView>
+              <View style={styles.wideShareIconRing}>
+                <Ionicons name="sparkles" size={17} color="#0A0D12" />
+              </View>
+              <Text style={styles.wideShareButtonText}>Поделиться состоянием</Text>
+              <Ionicons name="chevron-up" size={17} color="#4FD1C5" />
+            </TouchableOpacity>
           </View>
 
-          {/* D. CHAT INPUT BAR WITH MOOD SHARE BUTTON */}
+          {/* D. CHAT INPUT BAR */}
           <View style={styles.inputBar}>
-            {/* 💖 Open Real Check-in Flow Button */}
-            <TouchableOpacity
-              style={styles.shareCheckinBtn}
-              onPress={handleOpenRealCheckIn}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="sparkles" size={18} color="#FBBF24" />
-              <Text style={styles.shareCheckinBtnText}>Чекин</Text>
-            </TouchableOpacity>
-
             {/* Text Input Field */}
             <TextInput
               style={styles.textInputField}
@@ -1309,6 +1455,153 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
           </View>
         </View>
       )}
+
+      {/* 5. MODAL: ПОДЕЛИТЬСЯ СОСТОЯНИЕМ (ОТМЕТИТЬ НОВОЕ + 3 ПОСЛЕДНИХ ЧЕКИНА) */}
+      <Modal
+        visible={isShareModalOpen}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsShareModalOpen(false)}
+      >
+        <View style={styles.shareModalOverlay}>
+          <TouchableOpacity
+            style={styles.shareModalBackdrop}
+            activeOpacity={1}
+            onPress={() => setIsShareModalOpen(false)}
+          />
+
+          <View style={styles.shareModalSheet}>
+            {/* Sheet Handle */}
+            <View style={styles.sheetHandle} />
+
+            {/* Header */}
+            <View style={styles.shareModalHeader}>
+              <View>
+                <Text style={styles.shareModalTitle}>Поделиться состоянием</Text>
+                <Text style={styles.shareModalSubtitle}>
+                  {selectedPartner ? `Для ${selectedPartner.name}` : 'В диалог с близким'}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.shareModalCloseBtn}
+                onPress={() => setIsShareModalOpen(false)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="close" size={20} color="#CBD5E0" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              style={styles.shareModalScroll}
+              contentContainerStyle={styles.shareModalContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {/* TOP: RADIANT CIRCULAR BUTTON «ОТМЕТИТЬ СОСТОЯНИЕ» (КАК НА ГЛАВНОМ ЭКРАНЕ) */}
+              <View style={styles.shareHeroWrapper}>
+                <View style={styles.radiantWaveOuter} />
+                <View style={styles.radiantWaveMid} />
+                <View style={styles.radiantWaveInner} />
+
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    setIsShareModalOpen(false);
+                    handleOpenRealCheckIn();
+                  }}
+                  style={styles.radiantOrbButton}
+                >
+                  <View style={styles.radiantOrbMesh}>
+                    <View style={[styles.orbGlowQuarter, { backgroundColor: '#FB7185', top: -10, left: -10 }]} />
+                    <View style={[styles.orbGlowQuarter, { backgroundColor: '#FBBF24', top: -10, right: -10 }]} />
+                    <View style={[styles.orbGlowQuarter, { backgroundColor: '#38BDF8', bottom: -10, left: -10 }]} />
+                    <View style={[styles.orbGlowQuarter, { backgroundColor: '#4ADE80', bottom: -10, right: -10 }]} />
+                  </View>
+
+                  <View style={styles.radiantOrbCore}>
+                    <Ionicons name="sparkles" size={24} color="#FFFFFF" style={{ marginBottom: 4 }} />
+                    <Text style={styles.radiantOrbTitle}>Отметить</Text>
+                    <Text style={styles.radiantOrbSub}>состояние</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <Text style={styles.shareHeroCaption}>
+                  Прикоснитесь, чтобы выбрать чувства на карте
+                </Text>
+              </View>
+
+              {/* BOTTOM: 3 ПОСЛЕДНИХ ЧЕКИНА */}
+              <View style={styles.shareRecentSection}>
+                <View style={styles.shareRecentHeaderRow}>
+                  <Text style={styles.shareRecentSectionTitle}>Недавние чекины</Text>
+                  <Text style={styles.shareRecentSectionSub}>Выберите, чтобы отправить в чат</Text>
+                </View>
+
+                {recentCheckIns.length === 0 ? (
+                  <View style={styles.emptyRecentBox}>
+                    <Text style={styles.emptyRecentText}>
+                      У вас пока нет сохранённых чекинов.{'\n'}Нажмите на кнопку выше, чтобы отметить состояние!
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.recentCardsList}>
+                    {recentCheckIns.map((item) => {
+                      const quadId: QuadrantId = item.quadrantId || 'low_pleasant';
+                      const qColor = getQuadrantColor(quadId);
+                      const qEmoji = getQuadrantEmoji(quadId);
+
+                      const titleStr =
+                        item.emotions && item.emotions.length > 0
+                          ? item.emotions.map((e) => e.name).join(', ')
+                          : item.emotionName || item.emotionId;
+
+                      const timeStr = formatTimeAgo(item.timestamp);
+                      const noteText =
+                        item.note &&
+                        item.note.trim() &&
+                        !item.note.trim().toLowerCase().startsWith('отметил')
+                          ? item.note.trim()
+                          : '';
+
+                      return (
+                        <TouchableOpacity
+                          key={item.id}
+                          style={[styles.recentShareCard, { borderLeftColor: qColor }]}
+                          onPress={() => handleShareSpecificCheckIn(item)}
+                          activeOpacity={0.75}
+                        >
+                          <View style={styles.recentShareCardContent}>
+                            <View style={styles.recentShareCardTop}>
+                              <View style={styles.recentShareEmotionsPill}>
+                                <Text style={styles.recentShareEmoji}>{qEmoji}</Text>
+                                <Text style={styles.recentShareEmotionTitle} numberOfLines={1}>
+                                  {titleStr}
+                                </Text>
+                              </View>
+                              <Text style={styles.recentShareTime}>{timeStr}</Text>
+                            </View>
+
+                            {noteText ? (
+                              <Text style={styles.recentShareNote} numberOfLines={1}>
+                                «{noteText}»
+                              </Text>
+                            ) : null}
+                          </View>
+
+                          <View style={styles.recentShareActionBox}>
+                            <View style={styles.sendMiniCircle}>
+                              <Ionicons name="arrow-up" size={16} color="#0A0D12" />
+                            </View>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       {/* 5. MODAL: INVITE NEW PARTNER MODAL */}
       <Modal
@@ -2518,39 +2811,40 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
 
-  // Quick Care Chips Bar
-  quickCareBar: {
+  // Share Mood Bar & Wide Button
+  shareMoodBar: {
     backgroundColor: '#11151C',
     borderTopWidth: 1,
     borderTopColor: '#1A202C',
-    paddingVertical: 8,
-  },
-  quickCareScroll: {
     paddingHorizontal: 12,
-    gap: 8,
+    paddingTop: 8,
+    paddingBottom: 4,
   },
-  quickCareChip: {
+  wideShareButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 14,
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(79, 209, 197, 0.1)',
+    borderRadius: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    gap: 6,
+    borderColor: 'rgba(79, 209, 197, 0.3)',
   },
-  quickCareChipTalk: {
-    backgroundColor: 'rgba(251, 191, 36, 0.08)',
-    borderColor: 'rgba(251, 191, 36, 0.25)',
+  wideShareIconRing: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#4FD1C5',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  quickCareChipEmoji: {
+  wideShareButtonText: {
+    flex: 1,
+    color: '#E2E8F0',
     fontSize: 14,
-  },
-  quickCareChipText: {
-    color: '#CBD5E0',
-    fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '700',
+    marginLeft: 10,
   },
 
   // Chat Input Bar
@@ -2558,28 +2852,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingTop: 4,
+    paddingBottom: 10,
     backgroundColor: '#11151C',
-    borderTopWidth: 1,
-    borderTopColor: '#1A202C',
     gap: 8,
-  },
-  shareCheckinBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(251, 191, 36, 0.12)',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(251, 191, 36, 0.3)',
-    gap: 4,
-    height: 42,
-  },
-  shareCheckinBtnText: {
-    color: '#FBBF24',
-    fontSize: 12,
-    fontWeight: '700',
   },
   textInputField: {
     flex: 1,
@@ -2607,6 +2883,316 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: {
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  },
+
+  // Share Modal & Bottom Sheet
+  shareModalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+  },
+  shareModalBackdrop: {
+    ...StyleSheet.absoluteFill,
+  },
+  shareModalSheet: {
+    backgroundColor: '#0F131A',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    maxHeight: '88%',
+    paddingBottom: Platform.OS === 'ios' ? 36 : 24,
+  },
+  sheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#4A5568',
+    alignSelf: 'center',
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  shareModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1A202C',
+  },
+  shareModalTitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  shareModalSubtitle: {
+    color: '#718096',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  shareModalCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shareModalScroll: {
+    maxHeight: 520,
+  },
+  shareModalContent: {
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 20,
+  },
+
+  // Radiant Orb Button in Share Modal (Wave effect like on Home screen)
+  shareHeroWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+    position: 'relative',
+  },
+  radiantWaveOuter: {
+    position: 'absolute',
+    width: 190,
+    height: 190,
+    borderRadius: 95,
+    backgroundColor: 'rgba(79, 209, 197, 0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(79, 209, 197, 0.12)',
+  },
+  radiantWaveMid: {
+    position: 'absolute',
+    width: 154,
+    height: 154,
+    borderRadius: 77,
+    backgroundColor: 'rgba(251, 191, 36, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.18)',
+  },
+  radiantWaveInner: {
+    position: 'absolute',
+    width: 124,
+    height: 124,
+    borderRadius: 62,
+    backgroundColor: 'rgba(244, 63, 94, 0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(244, 63, 94, 0.22)',
+  },
+  radiantOrbButton: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    position: 'relative',
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#4FD1C5',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    elevation: 8,
+  },
+  radiantOrbMesh: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: '#0F141C',
+  },
+  orbGlowQuarter: {
+    position: 'absolute',
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    opacity: 0.65,
+  },
+  radiantOrbCore: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  radiantOrbTitle: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+    lineHeight: 15,
+  },
+  radiantOrbSub: {
+    color: '#E2E8F0',
+    fontSize: 11,
+    fontWeight: '600',
+    opacity: 0.9,
+  },
+  shareHeroCaption: {
+    color: '#8E9BAE',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 14,
+    fontWeight: '500',
+  },
+
+  // Recent Checkins in Share Modal
+  shareRecentSection: {
+    marginTop: 14,
+  },
+  shareRecentHeaderRow: {
+    marginBottom: 10,
+  },
+  shareRecentSectionTitle: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  shareRecentSectionSub: {
+    color: '#718096',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  emptyRecentBox: {
+    padding: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: 16,
+    alignItems: 'center',
+  },
+  emptyRecentText: {
+    color: '#8E9BAE',
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  recentCardsList: {
+    gap: 8,
+  },
+  recentShareCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#151922',
+    borderRadius: 14,
+    padding: 12,
+    borderLeftWidth: 4,
+    borderWidth: 1,
+    borderColor: '#202632',
+  },
+  recentShareCardContent: {
+    flex: 1,
+    marginRight: 10,
+  },
+  recentShareCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  recentShareEmotionsPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+  },
+  recentShareEmoji: {
+    fontSize: 16,
+  },
+  recentShareEmotionTitle: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+    flex: 1,
+  },
+  recentShareTime: {
+    color: '#718096',
+    fontSize: 11,
+  },
+  recentShareNote: {
+    color: '#CBD5E0',
+    fontSize: 12,
+    fontStyle: 'italic',
+  },
+  recentShareActionBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendMiniCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#4FD1C5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Insight Section in Check-in Cards
+  insightSection: {
+    marginTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+    paddingTop: 8,
+  },
+  insightToggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 5,
+  },
+  insightToggleBtnText: {
+    color: '#4FD1C5',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  insightExpandedBox: {
+    backgroundColor: 'rgba(0, 0, 0, 0.25)',
+    borderRadius: 12,
+    padding: 10,
+    marginTop: 6,
+    gap: 8,
+  },
+  insightNarrativeText: {
+    color: '#E2E8F0',
+    fontSize: 13,
+    lineHeight: 18,
+    fontStyle: 'italic',
+    paddingHorizontal: 4,
+  },
+  insightItemsList: {
+    gap: 6,
+    marginTop: 4,
+  },
+  insightItemCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderRadius: 10,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  insightItemHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  insightItemDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  insightItemTitle: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+    flex: 1,
+  },
+  insightItemQuadName: {
+    color: '#718096',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  insightItemDefText: {
+    color: '#A0AEC0',
+    fontSize: 12,
+    lineHeight: 16,
   },
 
   // Modals

@@ -44,67 +44,43 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ checkIns, onOpenCheckIn 
         <Text style={styles.heroSubtitle}>{t('home.subtitle')}</Text>
       </View>
 
-      {/* Mega Hero Check-In Button */}
-      <TouchableOpacity
-        activeOpacity={0.88}
-        onPress={handleStartCheckIn}
-        style={styles.heroCheckInCard}
-      >
-        <View style={styles.heroCheckInContent}>
-          {/* Glowing 4-quadrant mood orb on left */}
-          <View style={styles.heroMoodOrbWrap}>
-            <View style={styles.heroMoodOrb}>
-              <View style={styles.orbRow}>
-                <View style={[styles.orbQuarter, styles.orbTL, { backgroundColor: '#FB7185' }]} />
-                <View style={[styles.orbQuarter, styles.orbTR, { backgroundColor: '#FBBF24' }]} />
-              </View>
-              <View style={styles.orbRow}>
-                <View style={[styles.orbQuarter, styles.orbBL, { backgroundColor: '#38BDF8' }]} />
-                <View style={[styles.orbQuarter, styles.orbBR, { backgroundColor: '#4ADE80' }]} />
-              </View>
-              <View style={styles.orbCenterGleam}>
-                <Text style={styles.orbGleamIcon}>✨</Text>
-              </View>
-            </View>
+      {/* Radiant Circular Check-In Orb with Soft Waves of Light */}
+      <View style={styles.radiantHeroWrapper}>
+        <View style={styles.radiantWaveOuter} />
+        <View style={styles.radiantWaveMid} />
+        <View style={styles.radiantWaveInner} />
+
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={handleStartCheckIn}
+          style={styles.radiantOrbButton}
+        >
+          {/* Subtle multi-quadrant ambient aura background */}
+          <View style={styles.radiantOrbMesh}>
+            <View style={[styles.orbGlowQuarter, { backgroundColor: '#FB7185', top: -10, left: -10 }]} />
+            <View style={[styles.orbGlowQuarter, { backgroundColor: '#FBBF24', top: -10, right: -10 }]} />
+            <View style={[styles.orbGlowQuarter, { backgroundColor: '#38BDF8', bottom: -10, left: -10 }]} />
+            <View style={[styles.orbGlowQuarter, { backgroundColor: '#4ADE80', bottom: -10, right: -10 }]} />
           </View>
 
-          {/* Central Titles */}
-          <View style={styles.heroCtaTexts}>
-            <View style={styles.heroTagBadge}>
-              <Text style={styles.heroTagBadgeText}>
-                {language === 'ru' ? 'КАК Я СЕЙЧАС?' : 'HOW AM I NOW?'}
-              </Text>
-            </View>
-            <Text style={styles.heroCtaTitle}>
-              {language === 'ru' ? 'Отметить состояние' : 'Check In Now'}
+          {/* Frosted Glass Core with Icon & Text */}
+          <View style={styles.radiantOrbCore}>
+            <Ionicons name="sparkles" size={26} color="#FFFFFF" style={{ marginBottom: 4 }} />
+            <Text style={styles.radiantOrbTitle}>
+              {language === 'ru' ? 'Отметить' : 'Check In'}
             </Text>
-            <Text style={styles.heroCtaSubtitle}>
-              {language === 'ru'
-                ? 'Прислушайтесь к себе • 4 квадранта'
-                : 'Check in with yourself • 4 quadrants'}
+            <Text style={styles.radiantOrbSub}>
+              {language === 'ru' ? 'состояние' : 'now'}
             </Text>
           </View>
+        </TouchableOpacity>
 
-          {/* Action circular icon badge on right */}
-          <View style={styles.heroActionBadge}>
-            <Ionicons name="arrow-forward" size={24} color="#0A0D12" />
-          </View>
-        </View>
-
-        {/* Bottom subtle quadrant indicators */}
-        <View style={styles.heroBottomRow}>
-          <View style={styles.heroMiniQuadRow}>
-            <View style={[styles.heroMiniDot, { backgroundColor: '#FB7185' }]} />
-            <Text style={styles.heroMiniQuadText}>{language === 'ru' ? 'Тревога/Гнев' : 'High / Unpleasant'}</Text>
-            <View style={[styles.heroMiniDot, { backgroundColor: '#FBBF24', marginLeft: 8 }]} />
-            <Text style={styles.heroMiniQuadText}>{language === 'ru' ? 'Радость' : 'High / Pleasant'}</Text>
-            <View style={[styles.heroMiniDot, { backgroundColor: '#38BDF8', marginLeft: 8 }]} />
-            <Text style={styles.heroMiniQuadText}>{language === 'ru' ? 'Грусть' : 'Low / Unpleasant'}</Text>
-            <View style={[styles.heroMiniDot, { backgroundColor: '#4ADE80', marginLeft: 8 }]} />
-            <Text style={styles.heroMiniQuadText}>{language === 'ru' ? 'Покой' : 'Low / Pleasant'}</Text>
-          </View>
-        </View>
-      </TouchableOpacity>
+        <Text style={styles.radiantPromptCaption}>
+          {language === 'ru'
+            ? 'Прикоснитесь, чтобы прислушаться к себе'
+            : 'Tap the sphere to check in with yourself'}
+        </Text>
+      </View>
 
       {/* Stats Cards */}
       <View style={styles.statsRow}>
@@ -279,23 +255,96 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
   },
-  heroCheckInCard: {
-    backgroundColor: '#131922',
+  radiantHeroWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 14,
+    position: 'relative',
+    height: 270,
+  },
+  radiantWaveOuter: {
+    position: 'absolute',
+    width: 260,
+    height: 260,
+    borderRadius: 130,
+    borderWidth: 1,
+    borderColor: 'rgba(79, 209, 197, 0.12)',
+    backgroundColor: 'rgba(79, 209, 197, 0.02)',
+  },
+  radiantWaveMid: {
+    position: 'absolute',
+    width: 210,
+    height: 210,
+    borderRadius: 105,
     borderWidth: 1.5,
-    borderColor: '#263342',
-    borderRadius: 24,
-    padding: 18,
-    marginBottom: 24,
+    borderColor: 'rgba(251, 191, 36, 0.18)',
+    backgroundColor: 'rgba(251, 191, 36, 0.03)',
+  },
+  radiantWaveInner: {
+    position: 'absolute',
+    width: 165,
+    height: 165,
+    borderRadius: 82.5,
+    borderWidth: 1.5,
+    borderColor: 'rgba(74, 222, 128, 0.28)',
+    backgroundColor: 'rgba(74, 222, 128, 0.05)',
+  },
+  radiantOrbButton: {
+    width: 136,
+    height: 136,
+    borderRadius: 68,
+    overflow: 'hidden',
+    position: 'relative',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.35)',
     shadowColor: '#4FD1C5',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 18,
-    elevation: 8,
+    shadowOpacity: 0.4,
+    shadowRadius: 20,
+    elevation: 10,
   },
-  heroCheckInContent: {
-    flexDirection: 'row',
+  radiantOrbMesh: {
+    position: 'absolute',
+    width: 136,
+    height: 136,
+    opacity: 0.75,
+  },
+  orbGlowQuarter: {
+    position: 'absolute',
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    opacity: 0.8,
+  },
+  radiantOrbCore: {
+    width: 128,
+    height: 128,
+    borderRadius: 64,
+    backgroundColor: 'rgba(10, 13, 18, 0.72)',
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 16,
+  },
+  radiantOrbTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  radiantOrbSub: {
+    color: '#CBD5E0',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 1,
+  },
+  radiantPromptCaption: {
+    position: 'absolute',
+    bottom: 0,
+    color: '#718096',
+    fontSize: 12,
+    fontWeight: '500',
+    letterSpacing: 0.3,
   },
   heroMoodOrbWrap: {
     shadowColor: '#FBBF24',

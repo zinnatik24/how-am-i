@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>Как я? — Трекер чувств и настроения</title>
+
+    <!-- SEO & Social Sharing Meta (Telegram, WhatsApp, Web) -->
+    <meta name="description" content="Личное и парное пространство для осознания чувств, эмоциональной грамотности и поддержки близких." />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Как я? — Трекер чувств и настроения" />
+    <meta property="og:description" content="Личное и парное пространство для осознания чувств, эмоциональной грамотности и поддержки близких." />
+    <meta property="og:image" content="/icon.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Как я? — Трекер чувств и настроения" />
+    <meta name="twitter:description" content="Личное и парное пространство для осознания чувств и поддержки близких." />
+    <meta name="twitter:image" content="/icon.png" />
+
+    <!-- Favicon & PWA Icons -->
+    <link rel="icon" type="image/png" href="/icon.png" />
+    <link rel="apple-touch-icon" href="/icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="theme-color" content="#000000" />
+
+    <style id="expo-reset">
+      /* Full height & lock pinch-zoom */
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        background-color: #000000;
+        overflow: hidden;
+        touch-action: manipulation;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-text-size-adjust: 100%;
+        overscroll-behavior-y: none;
+      }
+      #root {
+        display: flex;
+        height: 100%;
+        flex: 1;
+        width: 100%;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+      }
+    </style>
+    <script>
+      // Prevent double-tap zoom and multi-touch pinch on mobile Safari / Chrome
+      document.addEventListener('gesturestart', function (e) {
+        e.preventDefault();
+      });
+      document.addEventListener('gesturechange', function (e) {
+        e.preventDefault();
+      });
+      document.addEventListener('gestureend', function (e) {
+        e.preventDefault();
+      });
+      document.addEventListener('dblclick', function (e) {
+        e.preventDefault();
+      });
+    </script>
+  </head>
+
+  <body>
+    <noscript>
+      Для работы приложения «Как я?» требуется включить JavaScript.
+    </noscript>
+    <div id="root"></div>
+  </body>
+</html>

@@ -166,8 +166,8 @@ export const CheckInModal: React.FC<CheckInModalProps> = ({
       saveCheckinToCloud({
         localId: newRecord.id,
         emotionId: primaryEmotion.id,
-        energy: primaryEmotion.energy,
-        pleasantness: primaryEmotion.pleasantness,
+        energy: QUADRANTS[primaryEmotion.quadrant]?.energy || 'low',
+        pleasantness: QUADRANTS[primaryEmotion.quadrant]?.pleasantness || 'pleasant',
         intensity: primaryEmotion.intensity,
         quadrant: primaryEmotion.quadrant,
         contextPeople: selectedPeople,
@@ -200,37 +200,42 @@ export const CheckInModal: React.FC<CheckInModalProps> = ({
         {/* VIEW 1: 4 Quadrants Selection */}
         {currentView === 'quadrants' && (
           <View style={styles.quadrantsContainer}>
-            {/* Top Navigation */}
-            <View style={styles.quadrantsHeader}>
-              <View style={styles.quadrantsHeaderTexts}>
-                <Text style={styles.quadrantsTitle}>
-                  {t('checkin.quadrantsTitle')}
-                </Text>
-                <Text style={styles.quadrantsSubtitle}>
-                  {t('checkin.quadrantsSubtitle')}
-                </Text>
-              </View>
+            {/* Top Navigation Bar: Close on left, Search on right */}
+            <View style={styles.quadrantsTopBar}>
               <TouchableOpacity
                 onPress={handleClose}
-                style={styles.navIconButton}
+                style={styles.quadrantsRoundBtn}
                 activeOpacity={0.7}
+                accessibilityLabel="Close"
               >
-                <Ionicons name="close" size={24} color="#CBD5E0" />
+                <Ionicons name="close" size={26} color="#FFFFFF" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => {
+                  triggerHaptic('light');
+                  setCurrentView('plane');
+                }}
+                style={styles.quadrantsRoundBtn}
+                activeOpacity={0.7}
+                accessibilityLabel="Search"
+              >
+                <Ionicons name="search" size={22} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
 
-            {/* Axes & 2x2 Quadrant Circles */}
-            <View style={styles.quadrantsGridWrap}>
-              {/* Vertical axis: High energy indicator */}
-              <View style={styles.axisVerticalTop}>
-                <Ionicons name="arrow-up" size={14} color="#A0AEC0" />
-                <Text style={styles.axisLabel}>
-                  {language === 'ru' ? 'ВЫСОКАЯ ЭНЕРГИЯ' : 'HIGH ENERGY'}
-                </Text>
-              </View>
+            {/* Title matching reference screenshot */}
+            <View style={styles.quadrantsTitleWrap}>
+              <Text style={styles.quadrantsSerifTitle}>
+                {language === 'ru'
+                  ? 'Выберите цвет, который лучше всего описывает ваше состояние прямо сейчас'
+                  : 'Tap the color that best describes how you feel right now'}
+              </Text>
+            </View>
 
-              {/* 2x2 Grid of Quadrant Circles */}
-              <View style={styles.quadrantsGrid}>
+            {/* 2x2 Soft-pulsing Quadrant Blobs */}
+            <View style={styles.quadrantsGridContainer}>
+              <View style={styles.quadrantsCluster}>
                 {/* Row 1: High energy (Red | Yellow) */}
                 <View style={styles.quadrantsRow}>
                   <View style={styles.quadrantCircleWrapper}>
@@ -245,17 +250,6 @@ export const CheckInModal: React.FC<CheckInModalProps> = ({
                       onPress={() => handleSelectQuadrant('high_pleasant')}
                     />
                   </View>
-                </View>
-
-                {/* Horizontal axis guides between rows */}
-                <View style={styles.axisHorizontalRow}>
-                  <Text style={styles.axisLabel}>
-                    {language === 'ru' ? '← НЕПРИЯТНО' : '← UNPLEASANT'}
-                  </Text>
-                  <View style={styles.axisCenterDot} />
-                  <Text style={styles.axisLabel}>
-                    {language === 'ru' ? 'ПРИЯТНО →' : 'PLEASANT →'}
-                  </Text>
                 </View>
 
                 {/* Row 2: Low energy (Blue | Green) */}
@@ -274,23 +268,6 @@ export const CheckInModal: React.FC<CheckInModalProps> = ({
                   </View>
                 </View>
               </View>
-
-              {/* Vertical axis: Low energy indicator */}
-              <View style={styles.axisVerticalBottom}>
-                <Ionicons name="arrow-down" size={14} color="#A0AEC0" />
-                <Text style={styles.axisLabel}>
-                  {language === 'ru' ? 'НИЗКАЯ ЭНЕРГИЯ' : 'LOW ENERGY'}
-                </Text>
-              </View>
-            </View>
-
-            {/* Prompt footer */}
-            <View style={styles.quadrantsFooterPrompt}>
-              <Text style={styles.quadrantsFooterPromptText}>
-                {language === 'ru'
-                  ? '💡 Нажмите на квадрант, чтобы погрузиться в карту чувств'
-                  : '💡 Tap a quadrant to dive into its feeling plane'}
-              </Text>
             </View>
           </View>
         )}
@@ -555,97 +532,65 @@ const styles = StyleSheet.create({
   },
   quadrantsContainer: {
     flex: 1,
-    backgroundColor: '#0A0D12',
+    backgroundColor: '#000000',
     justifyContent: 'space-between',
-    paddingBottom: Platform.OS === 'ios' ? 32 : 24,
+    paddingBottom: Platform.OS === 'ios' ? 44 : 28,
   },
-  quadrantsHeader: {
+  quadrantsTopBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 8,
+    paddingTop: Platform.OS === 'ios' ? 14 : 20,
   },
-  quadrantsHeaderTexts: {
-    flex: 1,
-    paddingRight: 16,
-  },
-  quadrantsTitle: {
-    color: '#FFFFFF',
-    fontSize: 26,
-    fontWeight: '800',
-    lineHeight: 32,
-    marginBottom: 6,
-  },
-  quadrantsSubtitle: {
-    color: '#94A3B8',
-    fontSize: 15,
-    lineHeight: 20,
-  },
-  quadrantsGridWrap: {
+  quadrantsRoundBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 16,
-    marginVertical: 10,
   },
-  axisVerticalTop: {
-    flexDirection: 'row',
+  quadrantsTitleWrap: {
+    paddingHorizontal: 24,
+    marginTop: 18,
+    marginBottom: 8,
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 12,
   },
-  axisVerticalBottom: {
-    flexDirection: 'row',
+  quadrantsSerifTitle: {
+    color: '#FFFFFF',
+    fontSize: 27,
+    fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    textAlign: 'center',
+    lineHeight: 35,
+    letterSpacing: -0.3,
+  },
+  quadrantsGridContainer: {
+    flex: 1,
     alignItems: 'center',
-    gap: 6,
-    marginTop: 12,
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
   },
-  axisLabel: {
-    color: '#718096',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-  },
-  quadrantsGrid: {
+  quadrantsCluster: {
     width: '100%',
-    maxWidth: 380,
+    maxWidth: 360,
     aspectRatio: 1,
-    justifyContent: 'space-between',
+    justifyContent: 'center',
   },
   quadrantsRow: {
     flex: 1,
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   quadrantCircleWrapper: {
     flex: 1,
+    aspectRatio: 1,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  axisHorizontalRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-  },
-  axisCenterDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#4A5568',
-  },
-  quadrantsFooterPrompt: {
-    paddingHorizontal: 20,
-    alignItems: 'center',
-  },
-  quadrantsFooterPromptText: {
-    color: '#64748B',
-    fontSize: 13,
-    textAlign: 'center',
-    fontWeight: '500',
+    margin: -4,
   },
   detailsContainer: {
     flex: 1,

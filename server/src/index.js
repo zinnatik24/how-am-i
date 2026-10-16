@@ -185,9 +185,14 @@ app.get('/api/auth/me', authMiddleware, async (req, res) => {
     }
     const user = userRes.rows[0];
 
-    // Get partners
+    // Update user's last_seen_at timestamp
+    await query('UPDATE users SET last_seen_at = NOW() WHERE id = $1', [user.id]).catch(() => {});
+
+    // Get partners with online status (active within last 3 minutes)
     const partnersRes = await query(
-      `SELECT u.id, u.name, u.avatar_url, u.email, f.status, f.created_at
+      `SELECT u.id, u.name, u.avatar_url, u.email, f.status, f.created_at,
+              u.last_seen_at,
+              (u.last_seen_at IS NOT NULL AND (NOW() - u.last_seen_at) < INTERVAL '3 minutes') as is_online
        FROM friendships f
        JOIN users u ON u.id = f.friend_id
        WHERE f.user_id = $1 AND f.status = 'accepted'`,
@@ -203,7 +208,15 @@ app.get('/api/auth/me', authMiddleware, async (req, res) => {
         inviteCode: user.invite_code,
         pushToken: user.push_token,
       },
-      partners: partnersRes.rows,
+      partners: partnersRes.rows.map((p) => ({
+        id: p.id,
+        name: p.name,
+        email: p.email,
+        avatarUrl: p.avatar_url,
+        status: p.status,
+        isOnline: Boolean(p.is_online),
+        lastSeenAt: p.last_seen_at,
+      })),
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -310,8 +323,29 @@ app.post('/api/checkins', authMiddleware, async (req, res) => {
       shareWithPartners = true,
     } = req.body;
 
-    if (!emotionId || !energy || !pleasantness || !quadrant) {
-      return res.status(400).json({ error: 'Обязательные поля: emotionId, energy, pleasantness, quadrant' });
+    let finalEnergy = energy;
+    let finalPleasantness = pleasantness;
+    if (!finalEnergy || !finalPleasantness) {
+      if (quadrant === 'high_pleasant') {
+        finalEnergy = finalEnergy || 'high';
+        finalPleasantness = finalPleasantness || 'pleasant';
+      } else if (quadrant === 'high_unpleasant') {
+        finalEnergy = finalEnergy || 'high';
+        finalPleasantness = finalPleasantness || 'unpleasant';
+      } else if (quadrant === 'low_pleasant') {
+        finalEnergy = finalEnergy || 'low';
+        finalPleasantness = finalPleasantness || 'pleasant';
+      } else if (quadrant === 'low_unpleasant') {
+        finalEnergy = finalEnergy || 'low';
+        finalPleasantness = finalPleasantness || 'unpleasant';
+      } else {
+        finalEnergy = finalEnergy || 'low';
+        finalPleasantness = finalPleasantness || 'pleasant';
+      }
+    }
+
+    if (!emotionId || !quadrant) {
+      return res.status(400).json({ error: 'Обязательные поля: emotionId, quadrant' });
     }
 
     const insertRes = await query(
@@ -325,8 +359,8 @@ app.post('/api/checkins', authMiddleware, async (req, res) => {
         req.user.userId,
         localId || null,
         emotionId,
-        energy,
-        pleasantness,
+        finalEnergy,
+        finalPleasantness,
         intensity || 2,
         quadrant,
         JSON.stringify(contextPeople || []),
@@ -617,6 +651,18 @@ app.get('/api/messages', authMiddleware, async (req, res) => {
     }
 
     const conversationId = [req.user.userId, partnerId].sort().join('_');
+
+    // Mark messages sent to current user in this conversation as read
+    await query(
+      `UPDATE messages
+       SET is_read = true
+       WHERE conversation_id = $1 AND to_user_id = $2 AND is_read = false`,
+      [conversationId, req.user.userId]
+    ).catch(() => {});
+
+    // Update current user's activity
+    await query('UPDATE users SET last_seen_at = NOW() WHERE id = $1', [req.user.userId]).catch(() => {});
+
     const msgsRes = await query(
       `SELECT m.*, u.name as from_name, u.avatar_url as from_avatar
        FROM messages m
@@ -717,7 +763,9 @@ app.post('/api/messages', authMiddleware, async (req, res) => {
 app.get('/api/conversations', authMiddleware, async (req, res) => {
   try {
     const friendsRes = await query(
-      `SELECT u.id, u.name, u.avatar_url, u.email, f.status, f.created_at as friendship_date
+      `SELECT u.id, u.name, u.avatar_url, u.email, f.status, f.created_at as friendship_date,
+              u.last_seen_at,
+              (u.last_seen_at IS NOT NULL AND (NOW() - u.last_seen_at) < INTERVAL '3 minutes') as is_online
        FROM friendships f
        JOIN users u ON u.id = f.friend_id
        WHERE f.user_id = $1 AND f.status = 'accepted'
@@ -758,6 +806,8 @@ app.get('/api/conversations', authMiddleware, async (req, res) => {
           email: friend.email,
           avatarUrl: friend.avatar_url,
           status: friend.status,
+          isOnline: Boolean(friend.is_online),
+          lastSeenAt: friend.last_seen_at,
         },
         conversationId: convId,
         lastMessage: lastMsgRes.rows[0] || null,
