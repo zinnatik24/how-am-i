@@ -74,44 +74,24 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ checkIns, onOpenCheckIn 
         <Text style={styles.heroTitle}>{t('home.greeting')}</Text>
       </View>
 
-      {/* Zen Check-In Section: Framed with Context Text and a Large Tactile Rounded Square Button */}
-      <View style={styles.zenHeroCard}>
-        <View style={styles.zenCardHeader}>
-          <Text style={styles.zenCardTitle}>
-            {isRu ? 'Как ваше самочувствие прямо сейчас?' : 'How are you feeling right now?'}
-          </Text>
-          <Text style={styles.zenCardFramingText}>
-            {isRu
-              ? 'Сделайте короткую паузу. Заметьте, что с вами происходит — стресс, радость, усталость или покой...'
-              : 'Take a short pause. Notice what is present — stress, joy, fatigue, or calm...'}
-          </Text>
-        </View>
-
-        {/* Large Rounded Square Check-In Button */}
-        <View style={styles.squircleButtonContainer}>
-          <Animated.View style={{ transform: [{ scale: btnScale }] }}>
-            <TouchableOpacity
-              style={styles.zenSquircleButton}
-              onPress={handleStartCheckIn}
-              onPressIn={handlePressIn}
-              onPressOut={handlePressOut}
-              activeOpacity={0.9}
-            >
-              <View style={styles.squircleIconBadge}>
-                <Ionicons name="sparkles" size={32} color="#4FD1C5" />
-              </View>
-              <Text style={styles.zenSquircleBtnTitle}>
-                {isRu ? 'Отметить\nсостояние' : 'Check In\nNow'}
-              </Text>
-              <View style={styles.zenSquircleFooter}>
-                <Text style={styles.zenSquircleFooterText}>
-                  {isRu ? '4 квадранта' : '4 quadrants'}
-                </Text>
-                <Ionicons name="arrow-forward" size={14} color="#4FD1C5" />
-              </View>
-            </TouchableOpacity>
-          </Animated.View>
-        </View>
+      {/* Lone Tactile Check-In Button (Pure Zen Minimalism, No Surrounding Box, No Extra Texts) */}
+      <View style={styles.loneCheckInContainer}>
+        <Animated.View style={{ transform: [{ scale: btnScale }] }}>
+          <TouchableOpacity
+            style={styles.zenSquircleButton}
+            onPress={handleStartCheckIn}
+            onPressIn={handlePressIn}
+            onPressOut={handlePressOut}
+            activeOpacity={0.88}
+          >
+            <View style={styles.squircleIconBadge}>
+              <Ionicons name="sparkles" size={32} color="#4FD1C5" />
+            </View>
+            <Text style={styles.zenSquircleBtnTitle}>
+              {isRu ? 'Отметить\nсостояние' : 'Check In\nNow'}
+            </Text>
+          </TouchableOpacity>
+        </Animated.View>
       </View>
 
       {/* Stats Cards */}
@@ -199,46 +179,18 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     lineHeight: 34,
   },
-  zenHeroCard: {
-    backgroundColor: '#121620',
-    borderWidth: 1,
-    borderColor: '#1E2532',
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 14,
-    elevation: 4,
-  },
-  zenCardHeader: {
-    marginBottom: 16,
-  },
-  zenCardTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    lineHeight: 26,
-    marginBottom: 8,
-  },
-  zenCardFramingText: {
-    fontSize: 14,
-    color: '#94A3B8',
-    lineHeight: 21,
-  },
-  squircleButtonContainer: {
+  loneCheckInContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginVertical: 6,
+    marginVertical: 14,
   },
   zenSquircleButton: {
     width: 170,
     height: 170,
-    backgroundColor: '#161D2A',
+    backgroundColor: '#141A24',
     borderRadius: 36,
     borderWidth: 1.5,
-    borderColor: 'rgba(79, 209, 197, 0.45)',
+    borderColor: 'rgba(79, 209, 197, 0.4)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 16,
@@ -252,31 +204,20 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: 'rgba(79, 209, 197, 0.15)',
+    backgroundColor: 'rgba(79, 209, 197, 0.12)',
     borderWidth: 1,
-    borderColor: 'rgba(79, 209, 197, 0.35)',
+    borderColor: 'rgba(79, 209, 197, 0.3)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   zenSquircleBtnTitle: {
     fontSize: 16,
     fontWeight: '800',
     color: '#FFFFFF',
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: 22,
     letterSpacing: 0.2,
-  },
-  zenSquircleFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 8,
-  },
-  zenSquircleFooterText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#4FD1C5',
   },
   statsRow: {
     flexDirection: 'row',

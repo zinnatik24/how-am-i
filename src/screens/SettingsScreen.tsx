@@ -66,9 +66,9 @@ const METHODOLOGY_DATA: MethodologySection[] = [
         url: 'https://www.ycei.org/',
       },
       {
-        titleRu: 'Д-р Марк Брэккетт: лаборатория и книга «Permission to Feel»',
-        titleEn: 'Dr. Marc Brackett: Research Lab & "Permission to Feel"',
-        url: 'https://www.marcbrackett.com/',
+        titleRu: 'Профессор Марк Брэккетт: научный профиль в Йельском университете',
+        titleEn: 'Prof. Marc Brackett: Yale Faculty Profile & Research',
+        url: 'https://medicine.yale.edu/profile/marc-brackett/',
       },
     ],
   },
@@ -92,14 +92,14 @@ const METHODOLOGY_DATA: MethodologySection[] = [
     ],
     links: [
       {
-        titleRu: 'Йельская методология RULER и доказательная база',
-        titleEn: 'Yale RULER Approach & Evidence Base',
-        url: 'https://www.ycei.org/ruler',
+        titleRu: 'Методология RULER Йельского университета (официальная страница)',
+        titleEn: 'Yale RULER Methodology (Official Yale Page)',
+        url: 'https://www.ycei.org/ruler-approach',
       },
       {
-        titleRu: 'Научное исследование: циркумплексная модель аффекта (Russell & Barrett)',
-        titleEn: 'Circumplex Model of Affect (Russell & Barrett, PubMed)',
-        url: 'https://pubmed.ncbi.nlm.nih.gov/11142416/',
+        titleRu: 'Циркумплексная 2D-модель аффекта: научный обзор и модель',
+        titleEn: 'Circumplex Model of Affect (Scientific Overview)',
+        url: 'https://en.wikipedia.org/wiki/Emotion_classification#Circumplex_model',
       },
     ],
   },
@@ -121,14 +121,14 @@ const METHODOLOGY_DATA: MethodologySection[] = [
     ],
     links: [
       {
-        titleRu: 'ФМРТ-исследование в Science: «Putting Feelings into Words» (Lieberman et al.)',
-        titleEn: 'Brain Imaging in Science: "Putting Feelings into Words" (Lieberman et al.)',
+        titleRu: 'ФМРТ-исследование в Science: «Putting Feelings into Words» (Lieberman et al., 2007)',
+        titleEn: 'Brain Imaging in Science: "Putting Feelings into Words" (Lieberman et al., 2007)',
         url: 'https://pubmed.ncbi.nlm.nih.gov/17576282/',
       },
       {
-        titleRu: 'Исследования гранулярности и здоровья: Лиза Фельдман Барретт',
-        titleEn: 'Emotional Granularity & Mental Health: Dr. Lisa Feldman Barrett',
-        url: 'https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4663189/',
+        titleRu: 'Эмоциональная гранулярность: фундаментальные исследования Лизы Фельдман Барретт',
+        titleEn: 'Emotional Granularity Research: Dr. Lisa Feldman Barrett',
+        url: 'https://en.wikipedia.org/wiki/Emotional_granularity',
       },
     ],
   },
@@ -161,9 +161,9 @@ const METHODOLOGY_DATA: MethodologySection[] = [
         url: 'https://medicine.yale.edu/childstudy/',
       },
       {
-        titleRu: 'Научные публикации YCEI об эмоциональной грамотности',
-        titleEn: 'YCEI Research Publications on Emotional Intelligence',
-        url: 'https://www.ycei.org/research',
+        titleRu: 'Исследовательские программы Йельского центра (YCEI)',
+        titleEn: 'Yale Center for Emotional Intelligence Initiatives',
+        url: 'https://www.ycei.org/what-we-do',
       },
     ],
   },
@@ -272,34 +272,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onCheckInsUpdate
     }
   };
 
-  // Clear local checkins
-  const handleClearData = () => {
-    const executeClear = async () => {
-      triggerHaptic('medium');
-      await clearAllCheckIns();
-      onCheckInsUpdated([]);
-      if (Platform.OS === 'web') {
-        alert(t('settings.clearDataSuccess'));
-      } else {
-        Alert.alert(t('settings.title'), t('settings.clearDataSuccess'));
-      }
-    };
 
-    if (Platform.OS === 'web') {
-      if (window.confirm(t('settings.clearDataConfirm'))) {
-        executeClear();
-      }
-    } else {
-      Alert.alert(
-        t('settings.clearData'),
-        t('settings.clearDataConfirm'),
-        [
-          { text: t('journal.cancel'), style: 'cancel' },
-          { text: t('journal.delete'), style: 'destructive', onPress: executeClear },
-        ]
-      );
-    }
-  };
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -577,24 +550,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onCheckInsUpdate
         </View>
       </View>
 
-      {/* 4. DATA MANAGEMENT (CLEANED UP: LOAD DEMO PERMANENTLY REMOVED) */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{t('settings.dataManagement')}</Text>
-        <Text style={styles.sectionSubtitle}>
-          {isRu ? 'Управление сохранёнными данными' : 'Manage your stored data'}
-        </Text>
 
-        <TouchableOpacity
-          style={[styles.actionButton, styles.dangerButton]}
-          onPress={handleClearData}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="trash-outline" size={18} color="#FC8181" />
-          <Text style={styles.dangerButtonText}>
-            {isRu ? 'Очистить локальный кэш записей' : 'Clear local records cache'}
-          </Text>
-        </TouchableOpacity>
-      </View>
 
       {/* Footer */}
       <View style={styles.footer}>
