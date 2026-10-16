@@ -50,9 +50,22 @@ CREATE TABLE IF NOT EXISTS partner_reactions (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS messages (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    conversation_id VARCHAR(128) NOT NULL,
+    from_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    to_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type VARCHAR(32) NOT NULL DEFAULT 'text',
+    content TEXT,
+    checkin_data JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_checkins_user_id ON checkins(user_id);
 CREATE INDEX IF NOT EXISTS idx_checkins_created_at ON checkins(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_friendships_user_id ON friendships(user_id);
 CREATE INDEX IF NOT EXISTS idx_friendships_friend_id ON friendships(friend_id);
 CREATE INDEX IF NOT EXISTS idx_users_invite_code ON users(invite_code);
 CREATE INDEX IF NOT EXISTS idx_partner_reactions_to_user ON partner_reactions(to_user_id);
+CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_messages_to_user ON messages(to_user_id, created_at DESC);

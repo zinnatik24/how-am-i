@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Alert,
   Modal,
@@ -9,13 +9,14 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CheckInRecord, QuadrantId } from '../types';
 import { QUADRANTS } from '../data/emotionsData';
 import { useLanguage } from '../i18n/LanguageContext';
 import { useAuth } from '../context/AuthContext';
-import { API_BASE_URL } from '../services/api';
+import { API_BASE_URL, ChatMessage, ChatCheckinData } from '../services/api';
 import { getLocalizedEmotionName, getLocalizedContextTag } from '../utils/localizationHelper';
 import { triggerHaptic } from '../utils/haptics';
 
@@ -31,7 +32,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
     isAuthenticated,
     partners,
     partnerFeed,
-    incomingReactions,
+    chatMessages,
     pendingInvite,
     clearPendingInvite,
     signInWithGoogle,
@@ -39,19 +40,42 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
     signOut,
     connectPartner,
     refreshFeed,
+    fetchChatMessages,
+    sendChatMessage,
     sendCarePing,
     sendCareReaction,
   } = useAuth();
+
+  // Chat message input state
+  const [inputText, setInputText] = useState<string>('');
+  const [isSending, setIsSending] = useState<boolean>(false);
+  const scrollViewRef = useRef<ScrollView>(null);
 
   // Partner connect code input toggle & state
   const [showCodeInput, setShowCodeInput] = useState<boolean>(false);
   const [partnerCodeInput, setPartnerCodeInput] = useState<string>('');
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
-  const [lastSentReaction, setLastSentReaction] = useState<string | null>(null);
+  const [lastSentBanner, setLastSentBanner] = useState<string | null>(null);
   const [isCopiedToast, setIsCopiedToast] = useState<boolean>(false);
+
+  // Settings / Partner Info Modal
+  const [isInfoModalOpen, setIsInfoModalOpen] = useState<boolean>(false);
 
   // Demo Login modal for development/testing
   const [isDemoModalOpen, setIsDemoModalOpen] = useState<boolean>(false);
+
+  // Primary partner (if connected) & their latest check-in
+  const primaryPartner = partners.length > 0 ? partners[0] : null;
+  const partnerLatestCheckIn = partnerFeed.length > 0 ? partnerFeed[0] : null;
+
+  // Auto scroll to bottom when messages update
+  useEffect(() => {
+    if (chatMessages && chatMessages.length > 0) {
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 150);
+    }
+  }, [chatMessages.length]);
 
   // Generate Smart Invite Link for Messengers
   const getInviteUrl = () => {
@@ -116,7 +140,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
       triggerHaptic('success');
       Alert.alert(
         'Вы связаны! ❤️',
-        `Вы теперь на связи с ${pendingInvite.fromName || result.partner?.name || 'партнёром'}. Настроение и чекины будут обновляться в реальном времени!`
+        `Вы теперь на связи с ${pendingInvite.fromName || result.partner?.name || 'партнёром'}. Настроение и чат обновляются в реальном времени!`
       );
     } else {
       triggerHaptic('light');
@@ -140,7 +164,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
       setShowCodeInput(false);
       Alert.alert(
         'Вы связаны! ❤️',
-        `Вы успешно подключились к ${result.partner?.name}. Теперь вы будете видеть настроение друг друга в реальном времени!`
+        `Вы успешно подключились к ${result.partner?.name}. Теперь вы можете общаться и видеть чекины друг друга!`
       );
     } else {
       triggerHaptic('light');
@@ -148,595 +172,892 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
     }
   };
 
-  // Care Ping: «Спросить: Как ты?»
-  const handleSendPing = async (partnerId?: string) => {
+  // Send Text Message
+  const handleSendTextMessage = async () => {
+    if (!inputText.trim() || !primaryPartner || isSending) return;
+    const textToSend = inputText.trim();
+    setInputText('');
+    setIsSending(true);
+    triggerHaptic('light');
+
+    await sendChatMessage(primaryPartner.id, textToSend, 'text');
+    setIsSending(false);
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 100);
+  };
+
+  // Send Check-in Card into Chat
+  const handleShareCheckInCard = async () => {
+    if (!primaryPartner) return;
     triggerHaptic('medium');
-    const res = await sendCarePing(partnerId);
-    if (res.success) {
-      triggerHaptic('success');
-      setLastSentReaction('💬 «Как ты?» (Пинг заботы отправлен)');
-      setTimeout(() => setLastSentReaction(null), 3500);
-    } else {
-      Alert.alert('Не удалось отправить', res.message);
+
+    if (!latestCheckIn) {
+      if (onOpenCheckIn) {
+        onOpenCheckIn();
+      } else {
+        Alert.alert('Нет свежего настроения', 'Сначала отметьте своё состояние на главном экране.');
+      }
+      return;
     }
+
+    const primaryEmotion = latestCheckIn.emotions && latestCheckIn.emotions[0];
+    const quadId: QuadrantId = primaryEmotion?.quadrantId || latestCheckIn.quadrantId || 'low_pleasant';
+    const quad = QUADRANTS[quadId];
+    const quadName = quad?.translations?.ru || quadId;
+    const emotionRu = primaryEmotion?.name || latestCheckIn.emotionName || latestCheckIn.emotionId;
+
+    const checkinData: ChatCheckinData = {
+      checkin_id: latestCheckIn.id,
+      emotion_id: latestCheckIn.emotionId,
+      emotionNameRu: emotionRu,
+      quadrant: quadId,
+      quadrantNameRu: quadName,
+      energy: quad?.energy || 'low',
+      pleasantness: quad?.pleasantness || 'pleasant',
+      intensity: latestCheckIn.intensity || 2,
+      context_people: latestCheckIn.context?.people || [],
+      context_place: latestCheckIn.context?.location || [],
+      context_activity: latestCheckIn.context?.activity || [],
+      note: latestCheckIn.note || '',
+      created_at: latestCheckIn.timestamp,
+    };
+
+    setLastSentBanner(`💛 Вы отправили настроение «${emotionRu}»`);
+    setTimeout(() => setLastSentBanner(null), 3000);
+
+    await sendChatMessage(
+      primaryPartner.id,
+      latestCheckIn.note || `Отметил(а) настроение: ${emotionRu}`,
+      'checkin',
+      checkinData
+    );
+
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 100);
+  };
+
+  // Care Ping: «Спросить: Как ты?»
+  const handleSendPing = async () => {
+    if (!primaryPartner) return;
+    triggerHaptic('medium');
+    setLastSentBanner('💭 Вы спросили: «Как ты?»');
+    setTimeout(() => setLastSentBanner(null), 3000);
+
+    await sendCarePing(primaryPartner.id);
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 100);
   };
 
   // Care Reaction (Обнять, Я рядом, Горжусь, Хочешь поговорить?)
-  const handleSendCareReaction = async (
-    partnerId: string,
-    reactionType: string,
-    reactionLabel: string
-  ) => {
+  const handleSendCareReaction = async (reactionType: string, reactionLabel: string) => {
+    if (!primaryPartner) return;
     triggerHaptic('success');
-    setLastSentReaction(reactionLabel);
-    const res = await sendCareReaction(partnerId, reactionType, reactionLabel);
-    if (res.success) {
-      setTimeout(() => setLastSentReaction(null), 3500);
-    }
+    setLastSentBanner(reactionLabel);
+    setTimeout(() => setLastSentBanner(null), 3000);
+
+    await sendCareReaction(primaryPartner.id, reactionType, reactionLabel);
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 100);
   };
 
-  // Primary partner (if connected) & their latest check-in
-  const primaryPartner = partners.length > 0 ? partners[0] : null;
-  const partnerLatestCheckIn = partnerFeed.length > 0 ? partnerFeed[0] : null;
-  const partnerQuad = partnerLatestCheckIn
-    ? QUADRANTS[partnerLatestCheckIn.quadrant as QuadrantId]
-    : null;
-  const partnerColor = partnerQuad?.color_hex || '#4FD1C5';
-
-  // Format time ago for partner
+  // Helpers
   const formatTimeAgo = (dateStr: string) => {
     const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
-    if (diff < 1) return 'Только что';
+    if (diff < 1) return 'только что';
     if (diff < 60) return `${diff} мин назад`;
     const hours = Math.floor(diff / 60);
     if (hours < 24) return `${hours} ч назад`;
     return new Date(dateStr).toLocaleDateString([], { day: 'numeric', month: 'short' });
   };
 
+  const formatMessageTime = (dateStr: string) => {
+    try {
+      const d = new Date(dateStr);
+      const hours = d.getHours().toString().padStart(2, '0');
+      const mins = d.getMinutes().toString().padStart(2, '0');
+      return `${hours}:${mins}`;
+    } catch (e) {
+      return '';
+    }
+  };
+
+  const getQuadrantColor = (quadrant?: string) => {
+    if (!quadrant) return '#4FD1C5';
+    if (quadrant === 'high_pleasant' || quadrant.includes('yellow')) return '#ECC94B';
+    if (quadrant === 'low_pleasant' || quadrant.includes('green')) return '#48BB78';
+    if (quadrant === 'low_unpleasant' || quadrant.includes('blue')) return '#4299E1';
+    if (quadrant === 'high_unpleasant' || quadrant.includes('red')) return '#F56565';
+    const quad = QUADRANTS[quadrant as QuadrantId];
+    return quad?.color_hex || '#4FD1C5';
+  };
+
+  const getQuadrantEmoji = (quadrant?: string) => {
+    if (!quadrant) return '💛';
+    if (quadrant === 'high_pleasant' || quadrant.includes('yellow')) return '💛';
+    if (quadrant === 'low_pleasant' || quadrant.includes('green')) return '💚';
+    if (quadrant === 'low_unpleasant' || quadrant.includes('blue')) return '💙';
+    if (quadrant === 'high_unpleasant' || quadrant.includes('red')) return '❤️';
+    return '💛';
+  };
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* 1. ELEGANT SCREEN HEADER */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Близкие</Text>
-          <Text style={styles.headerSubtitle}>
-            {isAuthenticated && primaryPartner
-              ? `На связи с ${primaryPartner.name}`
-              : 'Эмоциональный пульс пары'}
-          </Text>
-        </View>
-
-        {isAuthenticated && user && (
-          <TouchableOpacity
-            style={styles.profilePill}
-            onPress={() => {
-              Alert.alert(
-                user.name,
-                `Email: ${user.email}\nВаш инвайт-код: ${user.inviteCode}`,
-                [
-                  { text: 'Закрыть', style: 'cancel' },
-                  { text: 'Выйти из аккаунта', style: 'destructive', onPress: signOut },
-                ]
-              );
-            }}
-            activeOpacity={0.7}
-          >
-            <View style={styles.profileAvatarMini}>
-              <Text style={styles.profileAvatarMiniText}>
-                {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
-              </Text>
-            </View>
-            <Text style={styles.profilePillName} numberOfLines={1}>
-              {user.name.split(' ')[0]}
-            </Text>
-            <Ionicons name="ellipsis-vertical" size={14} color="#718096" />
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* TOAST: COPIED LINK */}
-      {isCopiedToast && (
-        <View style={styles.toast}>
-          <Ionicons name="checkmark-circle" size={18} color="#48BB78" />
-          <Text style={styles.toastText}>Ссылка скопирована в буфер обмена!</Text>
-        </View>
-      )}
-
-      {/* 2. INCOMING INVITE BANNER (If opened via ?invite=CODE link) */}
-      {pendingInvite && (
-        <View style={styles.incomingInviteCard}>
-          <View style={styles.incomingInviteRow}>
-            <View style={styles.incomingHeartCircle}>
-              <Ionicons name="heart" size={24} color="#ED64A6" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.incomingInviteTitle}>
-                {pendingInvite.fromName
-                  ? `${pendingInvite.fromName} приглашает вас!`
-                  : 'Приглашение в близкий круг'}
-              </Text>
-              <Text style={styles.incomingInviteSub}>
-                Подключитесь, чтобы чувствовать настроение друг друга в реальном времени.
-              </Text>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+    >
+      {/* 1. STATE A: NOT AUTHENTICATED */}
+      {!isAuthenticated && (
+        <ScrollView contentContainerStyle={styles.authScrollContent}>
+          <View style={styles.header}>
+            <View>
+              <Text style={styles.headerTitle}>Близкие</Text>
+              <Text style={styles.headerSubtitle}>Эмоциональный пульс пары</Text>
             </View>
           </View>
 
-          {isAuthenticated ? (
-            <TouchableOpacity
-              style={styles.primaryActionButton}
-              onPress={handleAcceptPendingInvite}
-              disabled={isConnecting}
-            >
-              <Ionicons name="checkmark-circle-outline" size={20} color="#FFFFFF" />
-              <Text style={styles.primaryActionButtonText}>
-                {isConnecting ? 'Связываем...' : 'Принять приглашение и связаться'}
-              </Text>
-            </TouchableOpacity>
-          ) : (
+          <View style={styles.welcomeCard}>
+            <View style={styles.welcomeGlowBackdrop} />
+            <View style={styles.welcomeIconRow}>
+              <View style={styles.welcomeIconCircle}>
+                <Ionicons name="chatbubbles" size={32} color="#4FD1C5" />
+              </View>
+              <View style={[styles.welcomeIconCircle, { marginLeft: -16 }]}>
+                <Ionicons name="heart" size={28} color="#ED64A6" />
+              </View>
+            </View>
+
+            <Text style={styles.welcomeTitle}>Чат для двоих{'\n'}с карточками настроения</Text>
+            <Text style={styles.welcomeDesc}>
+              Узнавайте, как дела у любимого человека без лишних слов. Делитесь чекинами настроения,
+              отправляйте знаки заботы и пишите друг другу в вашем личном пространстве.
+            </Text>
+
+            <View style={styles.featurePillList}>
+              <View style={styles.featurePill}>
+                <Ionicons name="chatbubble-ellipses-outline" size={16} color="#4FD1C5" />
+                <Text style={styles.featurePillText}>Личный чат для двоих</Text>
+              </View>
+              <View style={styles.featurePill}>
+                <Ionicons name="pulse-outline" size={16} color="#FBBF24" />
+                <Text style={styles.featurePillText}>Карточки с чекинами</Text>
+              </View>
+              <View style={styles.featurePill}>
+                <Ionicons name="cafe-outline" size={16} color="#ED64A6" />
+                <Text style={styles.featurePillText}>Забота в 1 клик</Text>
+              </View>
+            </View>
+
             <TouchableOpacity
               style={styles.googleButton}
               onPress={signInWithGoogle}
               activeOpacity={0.85}
             >
               <Ionicons name="logo-google" size={20} color="#0A0D12" />
-              <Text style={styles.googleButtonText}>Войти через Google и связаться</Text>
+              <Text style={styles.googleButtonText}>Войти через Google</Text>
             </TouchableOpacity>
-          )}
-        </View>
+
+            <TouchableOpacity
+              style={styles.demoLink}
+              onPress={() => setIsDemoModalOpen(true)}
+            >
+              <Text style={styles.demoLinkText}>⚡ Быстрый тестовый вход (Демо)</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
       )}
 
-      {/* 3. STATE A: NOT AUTHENTICATED (BEAUTIFUL ONBOARDING) */}
-      {!isAuthenticated && (
-        <View style={styles.welcomeCard}>
-          <View style={styles.welcomeGlowBackdrop} />
-
-          <View style={styles.welcomeIconRow}>
-            <View style={styles.welcomeIconCircle}>
-              <Ionicons name="heart-circle" size={36} color="#ED64A6" />
-            </View>
-            <View style={[styles.welcomeIconCircle, { marginLeft: -16 }]}>
-              <Ionicons name="sparkles" size={26} color="#FBBF24" />
-            </View>
-          </View>
-
-          <Text style={styles.welcomeTitle}>Быть ближе к тем,{'\n'}кто действительно дорог</Text>
-          <Text style={styles.welcomeDesc}>
-            Узнавайте, как дела у любимого человека без лишних слов. Делитесь чувствами,
-            замечайте усталость или радость и согревайте знаками заботы.
-          </Text>
-
-          {/* Core Features Pillars */}
-          <View style={styles.featurePillList}>
-            <View style={styles.featurePill}>
-              <Ionicons name="pulse-outline" size={16} color="#4FD1C5" />
-              <Text style={styles.featurePillText}>Живой пульс настроения</Text>
-            </View>
-            <View style={styles.featurePill}>
-              <Ionicons name="cafe-outline" size={16} color="#FBBF24" />
-              <Text style={styles.featurePillText}>Знаки заботы в 1 клик</Text>
-            </View>
-            <View style={styles.featurePill}>
-              <Ionicons name="lock-closed-outline" size={16} color="#ED64A6" />
-              <Text style={styles.featurePillText}>Только для вас двоих</Text>
-            </View>
-          </View>
-
-          {/* Primary CTA: Google Sign In */}
-          <TouchableOpacity
-            style={styles.googleButton}
-            onPress={signInWithGoogle}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="logo-google" size={20} color="#0A0D12" />
-            <Text style={styles.googleButtonText}>Войти через Google</Text>
-          </TouchableOpacity>
-
-          {/* Subtle Demo Option for Quick Testing */}
-          <TouchableOpacity
-            style={styles.demoLink}
-            onPress={() => setIsDemoModalOpen(true)}
-          >
-            <Text style={styles.demoLinkText}>⚡ Быстрый тестовый вход (Демо)</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* 4. STATE B: AUTHENTICATED, BUT NO PARTNER CONNECTED (FOCUSED INVITE) */}
+      {/* 2. STATE B: AUTHENTICATED, BUT NO PARTNER CONNECTED */}
       {isAuthenticated && !primaryPartner && (
-        <View style={styles.invitePartnerCard}>
-          <View style={styles.inviteGraphicBox}>
-            <View style={styles.avatarRingsOuter}>
-              <View style={styles.avatarRingLeft}>
-                <Text style={styles.avatarRingLetter}>
-                  {user?.name ? user.name.charAt(0).toUpperCase() : 'Я'}
-                </Text>
-              </View>
-              <View style={styles.avatarRingRight}>
-                <Ionicons name="heart" size={22} color="#ED64A6" />
-              </View>
+        <ScrollView contentContainerStyle={styles.authScrollContent}>
+          <View style={styles.header}>
+            <View>
+              <Text style={styles.headerTitle}>Близкие</Text>
+              <Text style={styles.headerSubtitle}>Пригласите партнёра для начала общения</Text>
             </View>
-          </View>
-
-          <Text style={styles.inviteCardTitle}>Пригласите партнёра</Text>
-          <Text style={styles.inviteCardSubtitle}>
-            Отправьте персональную ссылку в Telegram или WhatsApp. Ваш партнёр нажмёт на неё и мгновенно свяжется с вами.
-          </Text>
-
-          {/* Big Primary Share Button */}
-          <TouchableOpacity
-            style={styles.primaryActionButton}
-            onPress={handleShareInviteLink}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="paper-plane" size={20} color="#0A0D12" />
-            <Text style={styles.primaryActionButtonText}>Отправить ссылку партнёру</Text>
-          </TouchableOpacity>
-
-          {/* Quick Copy Code Button */}
-          <TouchableOpacity
-            style={styles.copyCodePill}
-            onPress={handleCopyCodeOnly}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.copyCodePillText}>
-              Ваш код: <Text style={styles.copyCodeBold}>{user?.inviteCode}</Text>
-            </Text>
-            <Ionicons name="copy-outline" size={14} color="#A0AEC0" />
-          </TouchableOpacity>
-
-          {/* Collapsible Manual Code Input */}
-          <View style={styles.manualCodeContainer}>
-            {!showCodeInput ? (
+            {user && (
               <TouchableOpacity
-                onPress={() => setShowCodeInput(true)}
-                style={styles.toggleCodeInputBtn}
+                style={styles.profilePill}
+                onPress={() => setIsInfoModalOpen(true)}
               >
-                <Text style={styles.toggleCodeInputText}>
-                  Партнёр уже прислал код? Ввести вручную
+                <View style={styles.profileAvatarMini}>
+                  <Text style={styles.profileAvatarMiniText}>
+                    {user.name ? user.name.charAt(0).toUpperCase() : 'Я'}
+                  </Text>
+                </View>
+                <Text style={styles.profilePillName} numberOfLines={1}>
+                  {user.name.split(' ')[0]}
                 </Text>
               </TouchableOpacity>
-            ) : (
-              <View style={styles.codeEntryBox}>
-                <TextInput
-                  style={styles.codeEntryInput}
-                  placeholder="Вставьте 6-значный код..."
-                  placeholderTextColor="#718096"
-                  value={partnerCodeInput}
-                  onChangeText={setPartnerCodeInput}
-                  autoCapitalize="characters"
-                  maxLength={8}
-                />
-                <TouchableOpacity
-                  style={styles.codeEntryBtn}
-                  onPress={handleConnectPartnerByCode}
-                  disabled={isConnecting}
-                >
-                  <Text style={styles.codeEntryBtnText}>
-                    {isConnecting ? '...' : 'Связать'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
             )}
           </View>
-        </View>
-      )}
 
-      {/* 5. STATE C: AUTHENTICATED WITH PARTNER (LIVE PARTNER PULSE HERO) */}
-      {isAuthenticated && primaryPartner && (
-        <>
-          {/* INCOMING CARE REACTION FROM PARTNER (Interactive Card) */}
-          {incomingReactions && incomingReactions.length > 0 && (
-            <View style={styles.incomingReactionCard}>
-              <View style={styles.incomingReactionRow}>
-                <View style={styles.incomingReactionIconCircle}>
-                  <Text style={{ fontSize: 24 }}>
-                    {incomingReactions[0].reaction_type === 'ping'
-                      ? '💭'
-                      : incomingReactions[0].reaction_type === 'hug'
-                      ? '🤗'
-                      : incomingReactions[0].reaction_type === 'proud'
-                      ? '🌟'
-                      : incomingReactions[0].reaction_type === 'talk'
-                      ? '☕'
-                      : '🤍'}
-                  </Text>
+          {/* Incoming Invite Banner if user opened through invite link */}
+          {pendingInvite && (
+            <View style={styles.incomingInviteCard}>
+              <View style={styles.incomingInviteRow}>
+                <View style={styles.incomingHeartCircle}>
+                  <Ionicons name="heart" size={24} color="#ED64A6" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <View style={styles.incomingReactionHeaderRow}>
-                    <Text style={styles.incomingReactionSender}>
-                      {incomingReactions[0].from_name || primaryPartner.name}
-                    </Text>
-                    <Text style={styles.incomingReactionTime}>
-                      {formatTimeAgo(incomingReactions[0].created_at)}
-                    </Text>
-                  </View>
-                  <Text style={styles.incomingReactionText}>
-                    {incomingReactions[0].reaction_label}
+                  <Text style={styles.incomingInviteTitle}>
+                    {pendingInvite.fromName
+                      ? `${pendingInvite.fromName} приглашает вас!`
+                      : 'Приглашение в близкий круг'}
                   </Text>
-                </View>
-              </View>
-
-              <View style={styles.incomingReactionActionsRow}>
-                {incomingReactions[0].reaction_type === 'ping' && onOpenCheckIn ? (
-                  <TouchableOpacity
-                    style={styles.incomingReactionActionBtn}
-                    onPress={() => {
-                      triggerHaptic('medium');
-                      onOpenCheckIn();
-                    }}
-                  >
-                    <Text style={styles.incomingReactionActionBtnText}>✍️ Ответить чекином</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.incomingReactionActionBtn}
-                    onPress={() =>
-                      handleSendCareReaction(primaryPartner.id, 'hug', '🤗 Теплые объятия для тебя!')
-                    }
-                  >
-                    <Text style={styles.incomingReactionActionBtnText}>🤗 Обнять в ответ</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-          )}
-
-          {/* A. Hero: Live Partner Status Card */}
-          <View style={[styles.pulseCard, { borderColor: `${partnerColor}44` }]}>
-            <View style={styles.pulseHeader}>
-              <View style={styles.pulsePartnerInfo}>
-                <View style={[styles.pulseAvatar, { backgroundColor: partnerColor }]}>
-                  <Text style={styles.pulseAvatarText}>
-                    {primaryPartner.name.charAt(0).toUpperCase()}
-                  </Text>
-                </View>
-                <View>
-                  <View style={styles.pulseNameRow}>
-                    <Text style={styles.pulsePartnerName}>{primaryPartner.name}</Text>
-                    <View style={styles.pulseActiveBadge}>
-                      <View style={styles.pulseDot} />
-                      <Text style={styles.pulseActiveText}>На связи</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.pulseTimeAgo}>
-                    {partnerLatestCheckIn
-                      ? formatTimeAgo(partnerLatestCheckIn.created_at)
-                      : 'Ещё не отмечал(а) настроение'}
+                  <Text style={styles.incomingInviteSub}>
+                    Подключитесь, чтобы открыть чат и видеть чекины настроения друг друга.
                   </Text>
                 </View>
               </View>
 
               <TouchableOpacity
-                onPress={() => {
-                  triggerHaptic('light');
-                  refreshFeed();
-                }}
-                style={styles.refreshIconBtn}
+                style={styles.primaryActionButton}
+                onPress={handleAcceptPendingInvite}
+                disabled={isConnecting}
               >
-                <Ionicons name="refresh" size={18} color="#A0AEC0" />
+                <Ionicons name="checkmark-circle-outline" size={20} color="#0A0D12" />
+                <Text style={styles.primaryActionButtonText}>
+                  {isConnecting ? 'Связываем...' : 'Принять приглашение и связаться'}
+                </Text>
               </TouchableOpacity>
             </View>
+          )}
 
-            {/* Partner Latest Emotion Display */}
-            {partnerLatestCheckIn ? (
-              <View style={styles.partnerEmotionContainer}>
-                {/* Big Glow Mood Pill */}
-                <View style={[styles.partnerMoodPill, { backgroundColor: partnerColor }]}>
-                  <Text style={styles.partnerMoodPillText}>
-                    {getLocalizedEmotionName(
-                      partnerLatestCheckIn.emotion_id,
-                      partnerLatestCheckIn.emotion_id,
-                      language
-                    ).toUpperCase()}
+          <View style={styles.invitePartnerCard}>
+            <View style={styles.inviteGraphicBox}>
+              <View style={styles.avatarRingsOuter}>
+                <View style={styles.avatarRingLeft}>
+                  <Text style={styles.avatarRingLetter}>
+                    {user?.name ? user.name.charAt(0).toUpperCase() : 'Я'}
                   </Text>
                 </View>
+                <View style={styles.avatarRingRight}>
+                  <Ionicons name="heart" size={22} color="#ED64A6" />
+                </View>
+              </View>
+            </View>
 
-                {/* Partner note in quotes */}
-                {partnerLatestCheckIn.note ? (
-                  <Text style={styles.partnerNote}>
-                    «{partnerLatestCheckIn.note}»
+            <Text style={styles.inviteCardTitle}>Пригласите партнёра в чат</Text>
+            <Text style={styles.inviteCardSubtitle}>
+              Отправьте персональную ссылку в Telegram или WhatsApp. Ваш партнёр нажмёт на неё и мгновенно откроет ваш общий чат настроения.
+            </Text>
+
+            <TouchableOpacity
+              style={styles.primaryActionButton}
+              onPress={handleShareInviteLink}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="paper-plane" size={20} color="#0A0D12" />
+              <Text style={styles.primaryActionButtonText}>Отправить ссылку партнёру</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.copyCodePill}
+              onPress={handleCopyCodeOnly}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.copyCodePillText}>
+                Ваш инвайт-код: <Text style={styles.copyCodeBold}>{user?.inviteCode}</Text>
+              </Text>
+              <Ionicons name="copy-outline" size={14} color="#A0AEC0" />
+            </TouchableOpacity>
+
+            <View style={styles.manualCodeContainer}>
+              {!showCodeInput ? (
+                <TouchableOpacity
+                  onPress={() => setShowCodeInput(true)}
+                  style={styles.toggleCodeInputBtn}
+                >
+                  <Text style={styles.toggleCodeInputText}>
+                    Партнёр уже прислал код? Ввести вручную
                   </Text>
-                ) : null}
-
-                {/* Context Pills (People, Place, Activity) */}
-                <View style={styles.contextPillsRow}>
-                  {partnerLatestCheckIn.context_people?.map((p, i) => (
-                    <View key={`pe-${i}`} style={styles.contextPill}>
-                      <Text style={styles.contextPillText}>
-                        👤 {getLocalizedContextTag(p, language)}
-                      </Text>
-                    </View>
-                  ))}
-                  {partnerLatestCheckIn.context_place?.map((p, i) => (
-                    <View key={`pl-${i}`} style={styles.contextPill}>
-                      <Text style={styles.contextPillText}>
-                        📍 {getLocalizedContextTag(p, language)}
-                      </Text>
-                    </View>
-                  ))}
-                  {partnerLatestCheckIn.context_activity?.map((p, i) => (
-                    <View key={`ac-${i}`} style={styles.contextPill}>
-                      <Text style={styles.contextPillText}>
-                        ⚡ {getLocalizedContextTag(p, language)}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            ) : (
-              <View style={styles.emptyPartnerState}>
-                <Ionicons name="leaf-outline" size={32} color="#718096" />
-                <Text style={styles.emptyPartnerStateText}>
-                  {primaryPartner.name} пока не делал(а) чекинов сегодня.{'\n'}
-                  Спросите, как дела, одним касанием:
-                </Text>
-              </View>
-            )}
-
-            {/* Feedback banner when reaction is sent */}
-            {lastSentReaction && (
-              <View style={styles.reactionSentBanner}>
-                <Ionicons name="heart" size={16} color="#ED64A6" />
-                <Text style={styles.reactionSentBannerText}>{lastSentReaction}</Text>
-              </View>
-            )}
-
-            {/* B. Care Micro-Reactions Bar */}
-            <View style={styles.careSection}>
-              <View style={styles.careSectionTop}>
-                <Text style={styles.careSectionHeading}>Знаки заботы</Text>
-                <TouchableOpacity
-                  style={styles.carePingBtn}
-                  onPress={() => handleSendPing(primaryPartner.id)}
-                >
-                  <Ionicons name="chatbubble-ellipses-outline" size={14} color="#4FD1C5" />
-                  <Text style={styles.carePingBtnText}>Спросить «Как ты?»</Text>
                 </TouchableOpacity>
-              </View>
-
-              <View style={styles.careButtonsGrid}>
-                <TouchableOpacity
-                  style={styles.careButton}
-                  onPress={() =>
-                    handleSendCareReaction(primaryPartner.id, 'hug', '🤗 Теплые объятия для тебя!')
-                  }
-                  activeOpacity={0.75}
-                >
-                  <Text style={styles.careEmoji}>🤗</Text>
-                  <Text style={styles.careLabel}>Обнять</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.careButton}
-                  onPress={() =>
-                    handleSendCareReaction(primaryPartner.id, 'with_you', '🤍 Я рядом, помни об этом!')
-                  }
-                  activeOpacity={0.75}
-                >
-                  <Text style={styles.careEmoji}>🤍</Text>
-                  <Text style={styles.careLabel}>Я рядом</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.careButton}
-                  onPress={() =>
-                    handleSendCareReaction(primaryPartner.id, 'proud', '🌟 Горжусь тобой!')
-                  }
-                  activeOpacity={0.75}
-                >
-                  <Text style={styles.careEmoji}>🌟</Text>
-                  <Text style={styles.careLabel}>Горжусь</Text>
-                </TouchableOpacity>
-
-                {/* «Хочешь поговорить?» PLACED STRICTLY LAST */}
-                <TouchableOpacity
-                  style={[styles.careButton, styles.careButtonTalk]}
-                  onPress={() =>
-                    handleSendCareReaction(
-                      primaryPartner.id,
-                      'talk',
-                      '☕ Если захочешь поговорить — я на связи.'
-                    )
-                  }
-                  activeOpacity={0.75}
-                >
-                  <Text style={styles.careEmoji}>☕</Text>
-                  <Text style={styles.careLabel}>Хочешь поговорить?</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-
-          {/* C. Mutual Status Reflection Card ("Что партнёр видит про вас") */}
-          <View style={styles.reflectionCard}>
-            <View style={styles.reflectionHeader}>
-              <Ionicons name="eye-outline" size={16} color="#A0AEC0" />
-              <Text style={styles.reflectionHeading}>Что видит партнёр про вас:</Text>
-            </View>
-            <View style={styles.reflectionContent}>
-              {latestCheckIn ? (
-                <View style={styles.reflectionRow}>
-                  <View style={styles.reflectionStateBox}>
-                    <Text style={styles.reflectionMoodText}>
-                      {getLocalizedEmotionName(
-                        latestCheckIn.emotionId,
-                        latestCheckIn.emotionName,
-                        language
-                      )}
-                    </Text>
-                    <Text style={styles.reflectionSub}>
-                      {formatTimeAgo(latestCheckIn.timestamp)}
-                    </Text>
-                  </View>
-                  {onOpenCheckIn && (
-                    <TouchableOpacity
-                      style={styles.updateCheckInBtn}
-                      onPress={() => {
-                        triggerHaptic('medium');
-                        onOpenCheckIn();
-                      }}
-                    >
-                      <Text style={styles.updateCheckInBtnText}>Обновить</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
               ) : (
-                <View style={styles.reflectionRow}>
-                  <Text style={styles.reflectionEmptyText}>
-                    Вы ещё не отмечали настроение.
-                  </Text>
-                  {onOpenCheckIn && (
-                    <TouchableOpacity
-                      style={styles.updateCheckInBtn}
-                      onPress={() => {
-                        triggerHaptic('medium');
-                        onOpenCheckIn();
-                      }}
-                    >
-                      <Text style={styles.updateCheckInBtnText}>Отметиться</Text>
-                    </TouchableOpacity>
-                  )}
+                <View style={styles.codeEntryBox}>
+                  <TextInput
+                    style={styles.codeEntryInput}
+                    placeholder="Вставьте 6-значный код..."
+                    placeholderTextColor="#718096"
+                    value={partnerCodeInput}
+                    onChangeText={setPartnerCodeInput}
+                    autoCapitalize="characters"
+                    maxLength={8}
+                  />
+                  <TouchableOpacity
+                    style={styles.codeEntryBtn}
+                    onPress={handleConnectPartnerByCode}
+                    disabled={isConnecting}
+                  >
+                    <Text style={styles.codeEntryBtnText}>
+                      {isConnecting ? '...' : 'Связать'}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               )}
             </View>
           </View>
-
-          {/* D. Recent History Timeline (if multiple checkins) */}
-          {partnerFeed.length > 1 && (
-            <View style={styles.timelineSection}>
-              <Text style={styles.timelineHeading}>Недавние состояния {primaryPartner.name}</Text>
-              <View style={styles.timelineList}>
-                {partnerFeed.slice(1, 5).map((item) => {
-                  const quad = QUADRANTS[item.quadrant as QuadrantId];
-                  const color = quad?.color_hex || '#4FD1C5';
-                  return (
-                    <View key={item.id} style={styles.timelineItem}>
-                      <View style={[styles.timelineDot, { backgroundColor: color }]} />
-                      <View style={styles.timelineBody}>
-                        <View style={styles.timelineRow}>
-                          <Text style={[styles.timelineEmotion, { color }]}>
-                            {getLocalizedEmotionName(item.emotion_id, item.emotion_id, language)}
-                          </Text>
-                          <Text style={styles.timelineTime}>
-                            {formatTimeAgo(item.created_at)}
-                          </Text>
-                        </View>
-                        {item.note ? (
-                          <Text style={styles.timelineNote} numberOfLines={2}>
-                            «{item.note}»
-                          </Text>
-                        ) : null}
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
-          )}
-        </>
+        </ScrollView>
       )}
 
-      {/* 6. MODAL: DEMO LOGIN MODAL (Discrete developer test) */}
+      {/* 3. STATE C: AUTHENTICATED WITH PARTNER (COUPLES EMOTIONAL CHAT ROOM) */}
+      {isAuthenticated && primaryPartner && (
+        <View style={styles.chatWrapper}>
+          {/* A. CHAT HEADER BAR */}
+          <View style={styles.chatHeader}>
+            <View style={styles.chatHeaderLeft}>
+              <View
+                style={[
+                  styles.partnerAvatar,
+                  {
+                    borderColor: getQuadrantColor(partnerLatestCheckIn?.quadrant),
+                  },
+                ]}
+              >
+                <Text style={styles.partnerAvatarText}>
+                  {primaryPartner.name.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+
+              <View style={styles.partnerHeaderMeta}>
+                <View style={styles.partnerHeaderNameRow}>
+                  <Text style={styles.partnerHeaderName} numberOfLines={1}>
+                    {primaryPartner.name}
+                  </Text>
+                  <View style={styles.livePulseDot} />
+                </View>
+
+                {/* Partner Latest Mood Capsule */}
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    if (partnerLatestCheckIn?.note) {
+                      Alert.alert(
+                        `${primaryPartner.name}`,
+                        `Чувствует: ${getLocalizedEmotionName(
+                          partnerLatestCheckIn.emotion_id,
+                          partnerLatestCheckIn.emotion_id,
+                          language
+                        )}\n\n«${partnerLatestCheckIn.note}»\n\n${formatTimeAgo(
+                          partnerLatestCheckIn.created_at
+                        )}`
+                      );
+                    }
+                  }}
+                  style={styles.partnerMoodCapsule}
+                >
+                  {partnerLatestCheckIn ? (
+                    <Text style={styles.partnerMoodCapsuleText} numberOfLines={1}>
+                      {getQuadrantEmoji(partnerLatestCheckIn.quadrant)}{' '}
+                      <Text style={{ fontWeight: '700', color: '#E2E8F0' }}>
+                        {getLocalizedEmotionName(
+                          partnerLatestCheckIn.emotion_id,
+                          partnerLatestCheckIn.emotion_id,
+                          language
+                        )}
+                      </Text>{' '}
+                      • {formatTimeAgo(partnerLatestCheckIn.created_at)}
+                    </Text>
+                  ) : (
+                    <Text style={styles.partnerMoodCapsuleText}>
+                      💬 На связи • пока без чекина
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Right Action Buttons */}
+            <View style={styles.chatHeaderActions}>
+              <TouchableOpacity
+                style={styles.chatHeaderIconBtn}
+                onPress={() => {
+                  triggerHaptic('light');
+                  refreshFeed();
+                  fetchChatMessages();
+                }}
+              >
+                <Ionicons name="refresh" size={18} color="#A0AEC0" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.chatHeaderIconBtn}
+                onPress={() => setIsInfoModalOpen(true)}
+              >
+                <Ionicons name="ellipsis-horizontal" size={18} color="#A0AEC0" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Feedback Banner for sent reaction/ping */}
+          {lastSentBanner && (
+            <View style={styles.floatingBanner}>
+              <Ionicons name="sparkles" size={14} color="#4FD1C5" />
+              <Text style={styles.floatingBannerText}>{lastSentBanner}</Text>
+            </View>
+          )}
+
+          {/* B. CHAT MESSAGES STREAM */}
+          <ScrollView
+            ref={scrollViewRef}
+            style={styles.messagesList}
+            contentContainerStyle={styles.messagesContent}
+            onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+          >
+            {/* Friendly Greeting / Intimate Intro */}
+            <View style={styles.chatWelcomeNotice}>
+              <Ionicons name="heart" size={20} color="#ED64A6" />
+              <Text style={styles.chatWelcomeNoticeText}>
+                Ваше безопасное пространство для двоих.{'\n'}
+                Делитесь чувствами, чекинами и согревайте заботой.
+              </Text>
+            </View>
+
+            {/* Empty state if no messages */}
+            {chatMessages.length === 0 && (
+              <View style={styles.emptyChatBox}>
+                <Text style={styles.emptyChatEmoji}>💌</Text>
+                <Text style={styles.emptyChatTitle}>Чат пока пуст</Text>
+                <Text style={styles.emptyChatSubtitle}>
+                  Отправьте первое сообщение, поделитесь карточкой настроения или пошлите знак заботы!
+                </Text>
+              </View>
+            )}
+
+            {/* Render Each Chat Message */}
+            {chatMessages.map((msg, index) => {
+              const isMe = msg.from_user_id === user?.id;
+
+              // 1. CHECK-IN CARD MESSAGE
+              if (msg.type === 'checkin' && msg.checkin_data) {
+                const data = msg.checkin_data;
+                const quadColor = getQuadrantColor(data.quadrant);
+                const quadEmoji = getQuadrantEmoji(data.quadrant);
+                const emotionTitle = data.emotionNameRu || data.emotion_id;
+
+                return (
+                  <View
+                    key={msg.id || `chk_${index}`}
+                    style={[
+                      styles.checkinCardOuter,
+                      isMe ? styles.checkinCardRight : styles.checkinCardLeft,
+                    ]}
+                  >
+                    <View style={[styles.checkinCardInner, { borderColor: `${quadColor}66` }]}>
+                      {/* Top Header of Check-in Card */}
+                      <View style={styles.checkinCardHeader}>
+                        <View style={styles.checkinCardSenderRow}>
+                          <View
+                            style={[
+                              styles.checkinSenderAvatar,
+                              { backgroundColor: isMe ? '#4FD1C5' : '#ED64A6' },
+                            ]}
+                          >
+                            <Text style={styles.checkinSenderAvatarText}>
+                              {isMe
+                                ? user?.name?.charAt(0).toUpperCase() || 'Я'
+                                : primaryPartner.name.charAt(0).toUpperCase()}
+                            </Text>
+                          </View>
+                          <View>
+                            <Text style={styles.checkinCardSenderName}>
+                              {isMe ? 'Вы отметили настроение' : `${primaryPartner.name} отметил(а) настроение`}
+                            </Text>
+                            <Text style={styles.checkinCardTime}>
+                              {formatMessageTime(msg.created_at)}
+                            </Text>
+                          </View>
+                        </View>
+                        <Text style={{ fontSize: 20 }}>{quadEmoji}</Text>
+                      </View>
+
+                      {/* Main Glow Pill with Emotion Name */}
+                      <View style={[styles.checkinMoodPill, { backgroundColor: quadColor }]}>
+                        <Text style={styles.checkinMoodPillText}>
+                          {emotionTitle.toUpperCase()}
+                        </Text>
+                      </View>
+
+                      {/* Note / Thought (if exists) */}
+                      {(data.note || msg.content) ? (
+                        <View style={styles.checkinNoteBox}>
+                          <Text style={styles.checkinNoteText}>
+                            «{data.note || msg.content}»
+                          </Text>
+                        </View>
+                      ) : null}
+
+                      {/* Context Pills (People, Place, Activity) */}
+                      {((data.context_people?.length || 0) > 0 ||
+                        (data.context_place?.length || 0) > 0 ||
+                        (data.context_activity?.length || 0) > 0) && (
+                        <View style={styles.checkinContextRow}>
+                          {data.context_people?.map((p, i) => (
+                            <View key={`cp-${i}`} style={styles.checkinContextChip}>
+                              <Text style={styles.checkinContextChipText}>
+                                👥 {getLocalizedContextTag(p, language)}
+                              </Text>
+                            </View>
+                          ))}
+                          {data.context_place?.map((p, i) => (
+                            <View key={`cpl-${i}`} style={styles.checkinContextChip}>
+                              <Text style={styles.checkinContextChipText}>
+                                📍 {getLocalizedContextTag(p, language)}
+                              </Text>
+                            </View>
+                          ))}
+                          {data.context_activity?.map((p, i) => (
+                            <View key={`ca-${i}`} style={styles.checkinContextChip}>
+                              <Text style={styles.checkinContextChipText}>
+                                ⚡ {getLocalizedContextTag(p, language)}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+
+                      {/* Interactive Care Actions Directly on Partner's Check-in Card */}
+                      {!isMe && (
+                        <View style={styles.checkinCardActionsRow}>
+                          <TouchableOpacity
+                            style={styles.cardMicroActionBtn}
+                            onPress={() =>
+                              handleSendCareReaction('hug', '🤗 Теплые объятия для тебя!')
+                            }
+                          >
+                            <Text style={styles.cardMicroActionEmoji}>🤗</Text>
+                            <Text style={styles.cardMicroActionText}>Обнять</Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={styles.cardMicroActionBtn}
+                            onPress={() =>
+                              handleSendCareReaction('with_you', '🤍 Я рядом, помни об этом!')
+                            }
+                          >
+                            <Text style={styles.cardMicroActionEmoji}>🤍</Text>
+                            <Text style={styles.cardMicroActionText}>Я рядом</Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={styles.cardMicroActionBtn}
+                            onPress={() =>
+                              handleSendCareReaction('proud', '🌟 Горжусь тобой!')
+                            }
+                          >
+                            <Text style={styles.cardMicroActionEmoji}>🌟</Text>
+                            <Text style={styles.cardMicroActionText}>Горжусь</Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={[styles.cardMicroActionBtn, styles.cardMicroActionTalk]}
+                            onPress={() =>
+                              handleSendCareReaction(
+                                'talk',
+                                '☕ Если захочешь поговорить — я на связи.'
+                              )
+                            }
+                          >
+                            <Text style={styles.cardMicroActionEmoji}>☕</Text>
+                            <Text style={styles.cardMicroActionText}>Поговорить</Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                );
+              }
+
+              // 2. CARE SIGN REACTION CARD
+              if (msg.type === 'reaction') {
+                return (
+                  <View
+                    key={msg.id || `rx_${index}`}
+                    style={[
+                      styles.reactionMessageRow,
+                      isMe ? styles.reactionRowRight : styles.reactionRowLeft,
+                    ]}
+                  >
+                    <View style={styles.reactionMessageCard}>
+                      <View style={styles.reactionMessageContent}>
+                        <Text style={styles.reactionMessageSender}>
+                          {isMe ? 'Вы отправили:' : `${msg.from_name || primaryPartner.name}:`}
+                        </Text>
+                        <Text style={styles.reactionMessageText}>{msg.content}</Text>
+                        <Text style={styles.messageTimestamp}>
+                          {formatMessageTime(msg.created_at)}
+                        </Text>
+                      </View>
+
+                      {!isMe && (
+                        <TouchableOpacity
+                          style={styles.reactionReplyBtn}
+                          onPress={() =>
+                            handleSendCareReaction('hug', '🤗 Крепко обнимаю в ответ!')
+                          }
+                        >
+                          <Text style={styles.reactionReplyBtnText}>🤗 Ответить</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                );
+              }
+
+              // 3. CARE PING CARD («Как ты?»)
+              if (msg.type === 'ping') {
+                return (
+                  <View
+                    key={msg.id || `pg_${index}`}
+                    style={[
+                      styles.pingMessageRow,
+                      isMe ? styles.pingRowRight : styles.pingRowLeft,
+                    ]}
+                  >
+                    <View style={styles.pingMessageCard}>
+                      <View style={styles.pingMessageHeader}>
+                        <Ionicons name="chatbubble-ellipses" size={16} color="#4FD1C5" />
+                        <Text style={styles.pingMessageTitle}>
+                          {isMe
+                            ? 'Вы поинтересовались: «Как ты?»'
+                            : `${msg.from_name || primaryPartner.name} интересуется: «Как ты?»`}
+                        </Text>
+                      </View>
+
+                      {!isMe && onOpenCheckIn && (
+                        <TouchableOpacity
+                          style={styles.pingReplyBtn}
+                          onPress={() => {
+                            triggerHaptic('medium');
+                            onOpenCheckIn();
+                          }}
+                        >
+                          <Ionicons name="create-outline" size={15} color="#0A0D12" />
+                          <Text style={styles.pingReplyBtnText}>Ответить чекином настроения</Text>
+                        </TouchableOpacity>
+                      )}
+
+                      <Text style={styles.messageTimestamp}>
+                        {formatMessageTime(msg.created_at)}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              }
+
+              // 4. REGULAR TEXT MESSAGE
+              return (
+                <View
+                  key={msg.id || `msg_${index}`}
+                  style={[
+                    styles.textMessageContainer,
+                    isMe ? styles.textMsgRight : styles.textMsgLeft,
+                  ]}
+                >
+                  <View style={[styles.textBubble, isMe ? styles.textBubbleMe : styles.textBubblePartner]}>
+                    {!isMe && (
+                      <Text style={styles.partnerBubbleAuthor}>
+                        {msg.from_name || primaryPartner.name}
+                      </Text>
+                    )}
+                    <Text style={styles.textMessageContent}>{msg.content}</Text>
+                    <View style={styles.textMetaRow}>
+                      <Text style={styles.textMessageTime}>
+                        {formatMessageTime(msg.created_at)}
+                      </Text>
+                      {isMe && (
+                        <Ionicons
+                          name="checkmark-done"
+                          size={13}
+                          color="#4FD1C5"
+                          style={{ marginLeft: 3 }}
+                        />
+                      )}
+                    </View>
+                  </View>
+                </View>
+              );
+            })}
+          </ScrollView>
+
+          {/* C. QUICK CARE CHIPS HORIZONTAL BAR */}
+          <View style={styles.quickCareBar}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.quickCareScroll}
+            >
+              <TouchableOpacity
+                style={styles.quickCareChip}
+                onPress={handleSendPing}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.quickCareChipEmoji}>💭</Text>
+                <Text style={styles.quickCareChipText}>«Как ты?»</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.quickCareChip}
+                onPress={() =>
+                  handleSendCareReaction('hug', '🤗 Теплые объятия для тебя!')
+                }
+                activeOpacity={0.7}
+              >
+                <Text style={styles.quickCareChipEmoji}>🤗</Text>
+                <Text style={styles.quickCareChipText}>Обнять</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.quickCareChip}
+                onPress={() =>
+                  handleSendCareReaction('with_you', '🤍 Я рядом, помни об этом!')
+                }
+                activeOpacity={0.7}
+              >
+                <Text style={styles.quickCareChipEmoji}>🤍</Text>
+                <Text style={styles.quickCareChipText}>Я рядом</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.quickCareChip}
+                onPress={() =>
+                  handleSendCareReaction('proud', '🌟 Горжусь тобой!')
+                }
+                activeOpacity={0.7}
+              >
+                <Text style={styles.quickCareChipEmoji}>🌟</Text>
+                <Text style={styles.quickCareChipText}>Горжусь</Text>
+              </TouchableOpacity>
+
+              {/* «Хочешь поговорить?» PLACED STRICTLY LAST */}
+              <TouchableOpacity
+                style={[styles.quickCareChip, styles.quickCareChipTalk]}
+                onPress={() =>
+                  handleSendCareReaction(
+                    'talk',
+                    '☕ Если захочешь поговорить — я на связи.'
+                  )
+                }
+                activeOpacity={0.7}
+              >
+                <Text style={styles.quickCareChipEmoji}>☕</Text>
+                <Text style={styles.quickCareChipText}>Хочешь поговорить?</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+
+          {/* D. CHAT INPUT BAR WITH MOOD SHARE BUTTON */}
+          <View style={styles.inputBar}>
+            {/* 💖 Share Check-in Card Button */}
+            <TouchableOpacity
+              style={styles.shareCheckinBtn}
+              onPress={handleShareCheckInCard}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="sparkles" size={18} color="#FBBF24" />
+              <Text style={styles.shareCheckinBtnText}>Чекин</Text>
+            </TouchableOpacity>
+
+            {/* Text Input Field */}
+            <TextInput
+              style={styles.textInputField}
+              placeholder={`Сообщение для ${primaryPartner.name.split(' ')[0]}...`}
+              placeholderTextColor="#718096"
+              value={inputText}
+              onChangeText={setInputText}
+              multiline
+              maxLength={1000}
+            />
+
+            {/* Send Button */}
+            <TouchableOpacity
+              style={[
+                styles.sendBtn,
+                inputText.trim() ? styles.sendBtnActive : styles.sendBtnDisabled,
+              ]}
+              onPress={handleSendTextMessage}
+              disabled={!inputText.trim() || isSending}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name="arrow-up"
+                size={20}
+                color={inputText.trim() ? '#0A0D12' : '#718096'}
+              />
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* 4. MODAL: PARTNER INFO & SETTINGS */}
+      <Modal
+        visible={isInfoModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsInfoModalOpen(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>Близкие и Настройки</Text>
+              <TouchableOpacity onPress={() => setIsInfoModalOpen(false)}>
+                <Ionicons name="close" size={22} color="#A0AEC0" />
+              </TouchableOpacity>
+            </View>
+
+            {user && (
+              <View style={styles.modalUserBox}>
+                <Text style={styles.modalUserLabel}>Вы вошли как:</Text>
+                <Text style={styles.modalUserName}>{user.name}</Text>
+                <Text style={styles.modalUserEmail}>{user.email}</Text>
+
+                <TouchableOpacity
+                  style={styles.modalCopyInviteBtn}
+                  onPress={handleShareInviteLink}
+                >
+                  <Ionicons name="share-social-outline" size={16} color="#4FD1C5" />
+                  <Text style={styles.modalCopyInviteBtnText}>Поделиться инвайт-ссылкой</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.modalCopyCodeBtn}
+                  onPress={handleCopyCodeOnly}
+                >
+                  <Text style={styles.modalCopyCodeBtnText}>
+                    Код: <Text style={{ color: '#4FD1C5', fontWeight: '800' }}>{user.inviteCode}</Text>
+                  </Text>
+                  <Ionicons name="copy-outline" size={14} color="#A0AEC0" />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {primaryPartner && (
+              <View style={styles.modalPartnerBox}>
+                <Text style={styles.modalUserLabel}>Ваш партнёр:</Text>
+                <Text style={styles.modalUserName}>{primaryPartner.name}</Text>
+                <Text style={styles.modalUserEmail}>{primaryPartner.email}</Text>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={styles.modalSignOutBtn}
+              onPress={() => {
+                setIsInfoModalOpen(false);
+                signOut();
+              }}
+            >
+              <Ionicons name="log-out-outline" size={18} color="#FC8181" />
+              <Text style={styles.modalSignOutBtnText}>Выйти из профиля</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 5. MODAL: DEMO LOGIN (Developer zero-config testing) */}
       <Modal
         visible={isDemoModalOpen}
         transparent
@@ -747,7 +1068,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Быстрый вход для тестирования</Text>
             <Text style={styles.modalSubtitle}>
-              Выберите профиль для проверки синхронизации чекинов и реакций пары:
+              Выберите профиль для проверки синхронизации чекинов и чата:
             </Text>
 
             <TouchableOpacity
@@ -779,7 +1100,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
           </View>
         </View>
       </Modal>
-    </ScrollView>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -788,7 +1109,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0A0D12',
   },
-  content: {
+  authScrollContent: {
     paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 48,
@@ -797,7 +1118,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
 
-  // 1. Header
+  // Header
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -848,124 +1169,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // Toast
-  toast: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1A202C',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#48BB78',
-    gap: 8,
-  },
-  toastText: {
-    color: '#E2E8F0',
-    fontSize: 13,
-    fontWeight: '500',
-  },
-
-  // Incoming Care Reaction Card
-  incomingReactionCard: {
-    backgroundColor: 'rgba(237, 100, 166, 0.1)',
-    borderRadius: 24,
-    padding: 16,
-    borderWidth: 1.5,
-    borderColor: 'rgba(237, 100, 166, 0.35)',
-    marginBottom: 16,
-  },
-  incomingReactionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 10,
-  },
-  incomingReactionIconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(237, 100, 166, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(237, 100, 166, 0.4)',
-  },
-  incomingReactionHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 2,
-  },
-  incomingReactionSender: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  incomingReactionTime: {
-    fontSize: 12,
-    color: '#A0AEC0',
-  },
-  incomingReactionText: {
-    fontSize: 14,
-    color: '#ED64A6',
-    fontWeight: '600',
-  },
-  incomingReactionActionsRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-  },
-  incomingReactionActionBtn: {
-    backgroundColor: 'rgba(237, 100, 166, 0.25)',
-    paddingVertical: 7,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(237, 100, 166, 0.5)',
-  },
-  incomingReactionActionBtnText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-
-  // 2. Incoming Invite Banner
-  incomingInviteCard: {
-    backgroundColor: 'rgba(237, 100, 166, 0.12)',
-    borderRadius: 20,
-    padding: 16,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(237, 100, 166, 0.35)',
-  },
-  incomingInviteRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 14,
-  },
-  incomingHeartCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(237, 100, 166, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  incomingInviteTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFF',
-  },
-  incomingInviteSub: {
-    fontSize: 13,
-    color: '#E2E8F0',
-    marginTop: 2,
-    lineHeight: 18,
-  },
-
-  // 3. Welcome Onboarding Card
+  // Welcome Screen
   welcomeCard: {
     backgroundColor: '#12161F',
     borderRadius: 28,
@@ -984,7 +1188,6 @@ const styles = StyleSheet.create({
     height: 200,
     borderRadius: 100,
     backgroundColor: 'rgba(79, 209, 197, 0.12)',
-    filter: 'blur(40px)',
   },
   welcomeIconRow: {
     flexDirection: 'row',
@@ -1071,7 +1274,7 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
 
-  // 4. Invite Partner Card (Empty partner state)
+  // Invite Partner
   invitePartnerCard: {
     backgroundColor: '#12161F',
     borderRadius: 28,
@@ -1208,328 +1411,576 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
 
-  // 5. LIVE PARTNER PULSE CARD
-  pulseCard: {
-    backgroundColor: '#12161F',
-    borderRadius: 28,
-    padding: 20,
-    borderWidth: 1.5,
-    marginBottom: 16,
+  // Incoming Invite Card
+  incomingInviteCard: {
+    backgroundColor: 'rgba(237, 100, 166, 0.12)',
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(237, 100, 166, 0.35)',
   },
-  pulseHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  pulsePartnerInfo: {
+  incomingInviteRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    marginBottom: 14,
   },
-  pulseAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+  incomingHeartCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(237, 100, 166, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  pulseAvatarText: {
-    color: '#0A0D12',
-    fontSize: 20,
-    fontWeight: '800',
-  },
-  pulseNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  pulsePartnerName: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  pulseActiveBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(72, 187, 120, 0.15)',
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    borderRadius: 10,
-    gap: 5,
-  },
-  pulseDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#48BB78',
-  },
-  pulseActiveText: {
-    color: '#48BB78',
-    fontSize: 11,
+  incomingInviteTitle: {
+    fontSize: 16,
     fontWeight: '700',
+    color: '#FFF',
   },
-  pulseTimeAgo: {
+  incomingInviteSub: {
     fontSize: 13,
-    color: '#718096',
+    color: '#E2E8F0',
     marginTop: 2,
-  },
-  refreshIconBtn: {
-    padding: 8,
+    lineHeight: 18,
   },
 
-  // Partner Emotion Box
-  partnerEmotionContainer: {
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
-    marginBottom: 16,
+  // ============================================
+  // COUPLES EMOTIONAL CHAT ROOM STYLING
+  // ============================================
+  chatWrapper: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    backgroundColor: '#0A0D12',
+    maxWidth: 600,
+    width: '100%',
+    alignSelf: 'center',
   },
-  partnerMoodPill: {
-    paddingVertical: 8,
-    paddingHorizontal: 22,
-    borderRadius: 20,
-    marginBottom: 10,
+  chatHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#11151C',
+    borderBottomWidth: 1,
+    borderBottomColor: '#1A202C',
+    zIndex: 10,
+  },
+  chatHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  partnerAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#1E2433',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+  },
+  partnerAvatarText: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  partnerHeaderMeta: {
+    flex: 1,
+  },
+  partnerHeaderNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  partnerHeaderName: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  livePulseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#48BB78',
+  },
+  partnerMoodCapsule: {
+    marginTop: 2,
+  },
+  partnerMoodCapsuleText: {
+    color: '#A0AEC0',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  chatHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  chatHeaderIconBtn: {
+    padding: 8,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+  },
+
+  // Floating Banner
+  floatingBanner: {
+    position: 'absolute',
+    top: 64,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(26, 32, 44, 0.95)',
+    borderWidth: 1,
+    borderColor: '#4FD1C5',
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    zIndex: 99,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
-    shadowRadius: 10,
+    shadowRadius: 8,
   },
-  partnerMoodPillText: {
-    color: '#0A0D12',
-    fontSize: 16,
-    fontWeight: '900',
-    letterSpacing: 0.8,
-  },
-  partnerNote: {
-    fontSize: 15,
+  floatingBannerText: {
     color: '#E2E8F0',
-    fontStyle: 'italic',
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 12,
-    paddingHorizontal: 12,
-  },
-  contextPillsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  contextPill: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-  },
-  contextPillText: {
-    color: '#A0AEC0',
     fontSize: 12,
-  },
-  emptyPartnerState: {
-    alignItems: 'center',
-    paddingVertical: 20,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
-    marginBottom: 16,
-    gap: 8,
-  },
-  emptyPartnerStateText: {
-    color: '#A0AEC0',
-    fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 20,
+    fontWeight: '600',
   },
 
-  // Reaction Sent Toast Banner
-  reactionSentBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(237, 100, 166, 0.15)',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    marginBottom: 14,
-    gap: 6,
-  },
-  reactionSentBannerText: {
-    color: '#ED64A6',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-
-  // Care Section
-  careSection: {},
-  careSectionTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  careSectionHeading: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#CBD5E0',
-    letterSpacing: 0.2,
-  },
-  carePingBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(79, 209, 197, 0.1)',
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(79, 209, 197, 0.3)',
-    gap: 5,
-  },
-  carePingBtnText: {
-    color: '#4FD1C5',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  careButtonsGrid: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  careButton: {
+  // Messages Area
+  messagesList: {
     flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    borderRadius: 18,
-    paddingVertical: 12,
-    paddingHorizontal: 4,
+  },
+  messagesContent: {
+    paddingHorizontal: 14,
+    paddingTop: 16,
+    paddingBottom: 16,
+    gap: 12,
+  },
+  chatWelcomeNotice: {
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    backgroundColor: 'rgba(237, 100, 166, 0.06)',
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    minHeight: 74,
+    borderColor: 'rgba(237, 100, 166, 0.15)',
+    gap: 6,
+    marginBottom: 8,
   },
-  careButtonTalk: {
-    borderColor: 'rgba(251, 191, 36, 0.25)',
-    backgroundColor: 'rgba(251, 191, 36, 0.04)',
+  chatWelcomeNoticeText: {
+    color: '#CBD5E0',
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 17,
   },
-  careEmoji: {
-    fontSize: 22,
+  emptyChatBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 24,
+    gap: 8,
+  },
+  emptyChatEmoji: {
+    fontSize: 40,
     marginBottom: 4,
   },
-  careLabel: {
-    color: '#E2E8F0',
-    fontSize: 11,
-    fontWeight: '600',
+  emptyChatTitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  emptyChatSubtitle: {
+    color: '#718096',
+    fontSize: 13,
     textAlign: 'center',
-    lineHeight: 13,
+    lineHeight: 19,
   },
 
-  // Reflection Card (What partner sees about me)
-  reflectionCard: {
-    backgroundColor: '#12161F',
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
-    marginBottom: 16,
+  // Text Messages
+  textMessageContainer: {
+    flexDirection: 'row',
+    width: '100%',
   },
-  reflectionHeader: {
+  textMsgRight: {
+    justifyContent: 'flex-end',
+  },
+  textMsgLeft: {
+    justifyContent: 'flex-start',
+  },
+  textBubble: {
+    maxWidth: '82%',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 18,
+  },
+  textBubbleMe: {
+    backgroundColor: '#1E3A3A',
+    borderTopRightRadius: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(79, 209, 197, 0.3)',
+  },
+  textBubblePartner: {
+    backgroundColor: '#181E29',
+    borderTopLeftRadius: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.07)',
+  },
+  partnerBubbleAuthor: {
+    color: '#4FD1C5',
+    fontSize: 11,
+    fontWeight: '700',
+    marginBottom: 3,
+  },
+  textMessageContent: {
+    color: '#F7FAFC',
+    fontSize: 15,
+    lineHeight: 21,
+  },
+  textMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 10,
+    justifyContent: 'flex-end',
+    marginTop: 4,
   },
-  reflectionHeading: {
-    fontSize: 13,
+  textMessageTime: {
     color: '#718096',
-    fontWeight: '600',
+    fontSize: 10,
+    fontWeight: '500',
   },
-  reflectionContent: {},
-  reflectionRow: {
+
+  // Checkin Card in Chat
+  checkinCardOuter: {
+    width: '100%',
+    marginVertical: 4,
+  },
+  checkinCardRight: {
+    alignItems: 'flex-end',
+  },
+  checkinCardLeft: {
+    alignItems: 'flex-start',
+  },
+  checkinCardInner: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: '#141A24',
+    borderRadius: 22,
+    padding: 16,
+    borderWidth: 1.5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+  },
+  checkinCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 12,
   },
-  reflectionStateBox: {
-    gap: 2,
+  checkinCardSenderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
-  reflectionMoodText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
+  checkinSenderAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  reflectionSub: {
-    fontSize: 12,
-    color: '#718096',
-  },
-  reflectionEmptyText: {
+  checkinSenderAvatarText: {
+    color: '#0A0D12',
     fontSize: 13,
-    color: '#718096',
+    fontWeight: '800',
   },
-  updateCheckInBtn: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+  checkinCardSenderName: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  checkinCardTime: {
+    color: '#718096',
+    fontSize: 11,
+  },
+  checkinMoodPill: {
+    alignSelf: 'flex-start',
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  checkinMoodPillText: {
+    color: '#0A0D12',
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  checkinNoteBox: {
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: '#4FD1C5',
+  },
+  checkinNoteText: {
+    color: '#E2E8F0',
+    fontSize: 14,
+    fontStyle: 'italic',
+    lineHeight: 20,
+  },
+  checkinContextRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 12,
+  },
+  checkinContextChip: {
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+  },
+  checkinContextChipText: {
+    color: '#A0AEC0',
+    fontSize: 11,
+  },
+  checkinCardActionsRow: {
+    flexDirection: 'row',
+    gap: 6,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+    paddingTop: 10,
+    marginTop: 4,
+  },
+  cardMicroActionBtn: {
+    flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 12,
+    paddingVertical: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardMicroActionTalk: {
+    backgroundColor: 'rgba(251, 191, 36, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.25)',
+  },
+  cardMicroActionEmoji: {
+    fontSize: 15,
+  },
+  cardMicroActionText: {
+    color: '#CBD5E0',
+    fontSize: 9,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+
+  // Reaction Message
+  reactionMessageRow: {
+    width: '100%',
+    marginVertical: 3,
+  },
+  reactionRowRight: {
+    alignItems: 'flex-end',
+  },
+  reactionRowLeft: {
+    alignItems: 'flex-start',
+  },
+  reactionMessageCard: {
+    maxWidth: '85%',
+    backgroundColor: 'rgba(237, 100, 166, 0.1)',
+    borderRadius: 18,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(237, 100, 166, 0.35)',
+  },
+  reactionMessageContent: {
+    marginBottom: 4,
+  },
+  reactionMessageSender: {
+    color: '#ED64A6',
+    fontSize: 11,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  reactionMessageText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  reactionReplyBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(237, 100, 166, 0.2)',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    marginTop: 6,
+  },
+  reactionReplyBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  // Ping Message («Как ты?»)
+  pingMessageRow: {
+    width: '100%',
+    marginVertical: 3,
+  },
+  pingRowRight: {
+    alignItems: 'flex-end',
+  },
+  pingRowLeft: {
+    alignItems: 'flex-start',
+  },
+  pingMessageCard: {
+    maxWidth: '85%',
+    backgroundColor: 'rgba(79, 209, 197, 0.1)',
+    borderRadius: 18,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(79, 209, 197, 0.35)',
+  },
+  pingMessageHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 6,
+  },
+  pingMessageTitle: {
+    color: '#4FD1C5',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  pingReplyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#4FD1C5',
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 12,
+    gap: 6,
+    marginTop: 4,
   },
-  updateCheckInBtnText: {
-    color: '#E2E8F0',
+  pingReplyBtnText: {
+    color: '#0A0D12',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  messageTimestamp: {
+    color: '#718096',
+    fontSize: 10,
+    marginTop: 4,
+    textAlign: 'right',
+  },
+
+  // Quick Care Chips Bar
+  quickCareBar: {
+    backgroundColor: '#11151C',
+    borderTopWidth: 1,
+    borderTopColor: '#1A202C',
+    paddingVertical: 8,
+  },
+  quickCareScroll: {
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  quickCareChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    gap: 6,
+  },
+  quickCareChipTalk: {
+    backgroundColor: 'rgba(251, 191, 36, 0.08)',
+    borderColor: 'rgba(251, 191, 36, 0.25)',
+  },
+  quickCareChipEmoji: {
+    fontSize: 14,
+  },
+  quickCareChipText: {
+    color: '#CBD5E0',
     fontSize: 12,
     fontWeight: '600',
   },
 
-  // Timeline Section
-  timelineSection: {
-    marginTop: 8,
-  },
-  timelineHeading: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#718096',
-    marginBottom: 12,
-    paddingHorizontal: 4,
-  },
-  timelineList: {
+  // Chat Input Bar
+  inputBar: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#11151C',
+    borderTopWidth: 1,
+    borderTopColor: '#1A202C',
     gap: 8,
   },
-  timelineItem: {
+  shareCheckinBtn: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: '#12161F',
-    borderRadius: 16,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
-    gap: 12,
-  },
-  timelineDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginTop: 4,
-  },
-  timelineBody: {
-    flex: 1,
-  },
-  timelineRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 2,
+    backgroundColor: 'rgba(251, 191, 36, 0.12)',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.3)',
+    gap: 4,
+    height: 42,
   },
-  timelineEmotion: {
-    fontSize: 14,
+  shareCheckinBtnText: {
+    color: '#FBBF24',
+    fontSize: 12,
     fontWeight: '700',
   },
-  timelineTime: {
-    fontSize: 11,
-    color: '#718096',
+  textInputField: {
+    flex: 1,
+    backgroundColor: '#1A202C',
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 10,
+    color: '#FFFFFF',
+    fontSize: 14,
+    maxHeight: 100,
+    minHeight: 42,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
   },
-  timelineNote: {
-    fontSize: 13,
-    color: '#A0AEC0',
-    fontStyle: 'italic',
-    marginTop: 2,
+  sendBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sendBtnActive: {
+    backgroundColor: '#4FD1C5',
+  },
+  sendBtnDisabled: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
   },
 
   // Modal
@@ -1542,26 +1993,106 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     width: '100%',
-    maxWidth: 360,
+    maxWidth: 380,
     backgroundColor: '#1A202C',
     borderRadius: 24,
-    padding: 24,
+    padding: 22,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: '800',
     color: '#FFF',
-    marginBottom: 6,
-    textAlign: 'center',
   },
   modalSubtitle: {
     fontSize: 13,
     color: '#A0AEC0',
     marginBottom: 20,
-    textAlign: 'center',
     lineHeight: 18,
+  },
+  modalUserBox: {
+    backgroundColor: '#12161F',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  modalUserLabel: {
+    color: '#718096',
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 2,
+    textTransform: 'uppercase',
+  },
+  modalUserName: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  modalUserEmail: {
+    color: '#A0AEC0',
+    fontSize: 12,
+    marginBottom: 10,
+  },
+  modalCopyInviteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(79, 209, 197, 0.1)',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    gap: 6,
+    marginBottom: 6,
+  },
+  modalCopyInviteBtnText: {
+    color: '#4FD1C5',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  modalCopyCodeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+  },
+  modalCopyCodeBtnText: {
+    color: '#A0AEC0',
+    fontSize: 12,
+  },
+  modalPartnerBox: {
+    backgroundColor: '#12161F',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  modalSignOutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(252, 129, 129, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(252, 129, 129, 0.25)',
+    gap: 8,
+  },
+  modalSignOutBtnText: {
+    color: '#FC8181',
+    fontSize: 13,
+    fontWeight: '700',
   },
   modalBtn: {
     borderWidth: 1.5,

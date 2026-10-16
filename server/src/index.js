@@ -339,14 +339,14 @@ app.post('/api/checkins', authMiddleware, async (req, res) => {
 
     const checkin = insertRes.rows[0];
 
-    // Find all partners to send push notification ONLY IF sharing is enabled
+    // Find all partners to share checkin and send push notification
     if (shareWithPartners !== false) {
       const partnersRes = await query(
-        `SELECT u.push_token, u.name as partner_name, cur.name as sender_name
+        `SELECT u.id as partner_id, u.push_token, u.name as partner_name, cur.name as sender_name
          FROM friendships f
          JOIN users u ON u.id = f.friend_id
          JOIN users cur ON cur.id = f.user_id
-         WHERE f.user_id = $1 AND f.status = 'accepted' AND f.notify_push = true AND u.push_token IS NOT NULL`,
+         WHERE f.user_id = $1 AND f.status = 'accepted' AND (f.share_checkins = true OR f.share_checkins IS NULL)`,
         [req.user.userId]
       );
 
@@ -355,18 +355,50 @@ app.post('/api/checkins', authMiddleware, async (req, res) => {
         const emotionTitle = emotionNameRu || emotionId;
         const quadTitle = quadrantNameRu ? ` (${quadrantNameRu})` : '';
 
-        const tokens = partnersRes.rows.map(p => p.push_token);
-        sendExpoPushNotification(
-          tokens,
-          `💛 ${senderName} отметил(а) настроение`,
-          `Чувствует: ${emotionTitle}${quadTitle}`,
-          {
-            type: 'checkin',
-            checkinId: checkin.id,
-            senderName,
-            emotionId,
-          }
-        );
+        // Insert checkin card into chat messages for each partner
+        for (const p of partnersRes.rows) {
+          const convId = [req.user.userId, p.partner_id].sort().join('_');
+          await query(
+            `INSERT INTO messages (conversation_id, from_user_id, to_user_id, type, content, checkin_data)
+             VALUES ($1, $2, $3, 'checkin', $4, $5)`,
+            [
+              convId,
+              req.user.userId,
+              p.partner_id,
+              note || null,
+              JSON.stringify({
+                checkin_id: checkin.id,
+                emotion_id: emotionId,
+                emotionNameRu: emotionNameRu || emotionId,
+                quadrant,
+                quadrantNameRu: quadrantNameRu || quadrant,
+                energy,
+                pleasantness,
+                intensity,
+                context_people: contextPeople || [],
+                context_place: contextPlace || [],
+                context_activity: contextActivity || [],
+                note: note || '',
+                created_at: checkin.created_at,
+              }),
+            ]
+          ).catch((e) => console.warn('[CHECKIN] Could not insert to messages:', e));
+        }
+
+        const tokens = partnersRes.rows.map(p => p.push_token).filter(Boolean);
+        if (tokens.length > 0) {
+          sendExpoPushNotification(
+            tokens,
+            `💛 ${senderName} отметил(а) настроение`,
+            `Чувствует: ${emotionTitle}${quadTitle}`,
+            {
+              type: 'checkin',
+              checkinId: checkin.id,
+              senderName,
+              emotionId,
+            }
+          );
+        }
       }
     }
 
@@ -434,12 +466,22 @@ app.post('/api/partner/ping', authMiddleware, async (req, res) => {
     }
 
     const partner = targetPartner.rows[0];
+    const pingLabel = '💭 Интересуется: «Как ты?»';
 
-    // Save ping to partner_reactions so partner sees it in app
+    // Save ping to partner_reactions
     await query(
       `INSERT INTO partner_reactions (from_user_id, to_user_id, reaction_type, reaction_label)
        VALUES ($1, $2, $3, $4)`,
-      [req.user.userId, partner.id, 'ping', '💭 Интересуется: «Как ты?»']
+      [req.user.userId, partner.id, 'ping', pingLabel]
+    );
+
+    // Save ping to messages
+    const convId = [req.user.userId, partner.id].sort().join('_');
+    const msgInsert = await query(
+      `INSERT INTO messages (conversation_id, from_user_id, to_user_id, type, content)
+       VALUES ($1, $2, $3, 'ping', $4)
+       RETURNING *`,
+      [convId, req.user.userId, partner.id, pingLabel]
     );
 
     if (partner.push_token) {
@@ -451,7 +493,7 @@ app.post('/api/partner/ping', authMiddleware, async (req, res) => {
       );
     }
 
-    res.json({ success: true, message: 'Пинг заботы отправлен!' });
+    res.json({ success: true, message: 'Пинг заботы отправлен!', chatMessage: msgInsert.rows[0] });
   } catch (err) {
     console.error('[PING] Error:', err);
     res.status(500).json({ error: err.message });
@@ -494,6 +536,15 @@ app.post('/api/partner/reaction', authMiddleware, async (req, res) => {
       [req.user.userId, partner.id, reactionType || 'hug', reactionLabel]
     );
 
+    // Save reaction to messages
+    const convId = [req.user.userId, partner.id].sort().join('_');
+    const msgInsert = await query(
+      `INSERT INTO messages (conversation_id, from_user_id, to_user_id, type, content)
+       VALUES ($1, $2, $3, 'reaction', $4)
+       RETURNING *`,
+      [convId, req.user.userId, partner.id, reactionLabel]
+    );
+
     // Send push
     if (partner.push_token) {
       sendExpoPushNotification(
@@ -504,7 +555,7 @@ app.post('/api/partner/reaction', authMiddleware, async (req, res) => {
       );
     }
 
-    res.json({ success: true, message: 'Реакция отправлена!' });
+    res.json({ success: true, message: 'Реакция отправлена!', chatMessage: msgInsert.rows[0] });
   } catch (err) {
     console.error('[REACTION] Error:', err);
     res.status(500).json({ error: err.message });
@@ -526,6 +577,118 @@ app.get('/api/partner/reactions', authMiddleware, async (req, res) => {
     res.json(reactions.rows);
   } catch (err) {
     console.error('[REACTIONS GET] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 12. Chat Messages: GET conversation messages
+app.get('/api/messages', authMiddleware, async (req, res) => {
+  try {
+    let { partnerId, limit = 100 } = req.query;
+
+    if (!partnerId) {
+      const friendRes = await query(
+        `SELECT friend_id FROM friendships
+         WHERE user_id = $1 AND status = 'accepted'
+         LIMIT 1`,
+        [req.user.userId]
+      );
+      if (friendRes.rows.length === 0) {
+        return res.json({ messages: [], conversationId: null });
+      }
+      partnerId = friendRes.rows[0].friend_id;
+    }
+
+    const conversationId = [req.user.userId, partnerId].sort().join('_');
+    const msgsRes = await query(
+      `SELECT m.*, u.name as from_name, u.avatar_url as from_avatar
+       FROM messages m
+       JOIN users u ON u.id = m.from_user_id
+       WHERE m.conversation_id = $1
+       ORDER BY m.created_at ASC
+       LIMIT $2`,
+      [conversationId, parseInt(limit, 10)]
+    );
+
+    res.json({ messages: msgsRes.rows, conversationId });
+  } catch (err) {
+    console.error('[MESSAGES GET] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 13. Chat Messages: POST a message (text, checkin, reaction, ping)
+app.post('/api/messages', authMiddleware, async (req, res) => {
+  try {
+    const { partnerId, content, type = 'text', checkinData } = req.body;
+    let targetPartnerId = partnerId;
+
+    if (!targetPartnerId) {
+      const friendRes = await query(
+        `SELECT friend_id FROM friendships
+         WHERE user_id = $1 AND status = 'accepted'
+         LIMIT 1`,
+        [req.user.userId]
+      );
+      if (friendRes.rows.length === 0) {
+        return res.status(404).json({ error: 'Партнёр не найден' });
+      }
+      targetPartnerId = friendRes.rows[0].friend_id;
+    }
+
+    const conversationId = [req.user.userId, targetPartnerId].sort().join('_');
+
+    const insertRes = await query(
+      `INSERT INTO messages (conversation_id, from_user_id, to_user_id, type, content, checkin_data)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING *`,
+      [
+        conversationId,
+        req.user.userId,
+        targetPartnerId,
+        type,
+        content || null,
+        checkinData ? JSON.stringify(checkinData) : null,
+      ]
+    );
+
+    const senderRes = await query('SELECT name, avatar_url FROM users WHERE id = $1', [req.user.userId]);
+    const sender = senderRes.rows[0] || { name: 'Близкий человек' };
+    const insertedMessage = {
+      ...insertRes.rows[0],
+      from_name: sender.name,
+      from_avatar: sender.avatar_url,
+    };
+
+    // Push notification to partner
+    const partnerRes = await query('SELECT push_token FROM users WHERE id = $1', [targetPartnerId]);
+    if (partnerRes.rows.length > 0 && partnerRes.rows[0].push_token) {
+      let pushTitle = `💬 ${sender.name}`;
+      let pushBody = content || 'Новое сообщение';
+
+      if (type === 'checkin') {
+        const emotion = checkinData?.emotionNameRu || checkinData?.emotion_id || 'настроением';
+        pushTitle = `💛 ${sender.name} поделился(лась) настроением`;
+        pushBody = `Чувствует: ${emotion}${checkinData?.note ? ` — «${checkinData.note}»` : ''}`;
+      } else if (type === 'reaction') {
+        pushTitle = `❤️ ${sender.name} отправил(а) знак заботы`;
+        pushBody = content || 'Знак заботы';
+      } else if (type === 'ping') {
+        pushTitle = `💭 ${sender.name}`;
+        pushBody = 'Интересуется: «Как ты?»';
+      }
+
+      sendExpoPushNotification(partnerRes.rows[0].push_token, pushTitle, pushBody, {
+        type: 'chat_message',
+        messageId: insertedMessage.id,
+        conversationId,
+        senderId: req.user.userId,
+      });
+    }
+
+    res.json({ success: true, message: insertedMessage });
+  } catch (err) {
+    console.error('[MESSAGES POST] Error:', err);
     res.status(500).json({ error: err.message });
   }
 });

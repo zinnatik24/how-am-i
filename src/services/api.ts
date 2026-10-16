@@ -226,3 +226,53 @@ export async function fetchIncomingReactions(): Promise<PartnerReaction[]> {
     method: 'GET',
   });
 }
+
+// 11. Chat Messages Interfaces and APIs
+export interface ChatCheckinData {
+  checkin_id?: string;
+  emotion_id: string;
+  emotionNameRu?: string;
+  quadrant: string;
+  quadrantNameRu?: string;
+  energy: string;
+  pleasantness: string;
+  intensity: number;
+  context_people?: string[];
+  context_place?: string[];
+  context_activity?: string[];
+  note?: string;
+  created_at?: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  conversation_id: string;
+  from_user_id: string;
+  to_user_id: string;
+  type: 'text' | 'checkin' | 'reaction' | 'ping';
+  content?: string | null;
+  checkin_data?: ChatCheckinData | null;
+  created_at: string;
+  from_name?: string;
+  from_avatar?: string;
+}
+
+export async function fetchMessagesApi(partnerId?: string): Promise<{ messages: ChatMessage[]; conversationId: string | null }> {
+  const queryParam = partnerId ? `?partnerId=${encodeURIComponent(partnerId)}` : '';
+  return apiFetch<{ messages: ChatMessage[]; conversationId: string | null }>(`/api/messages${queryParam}`, {
+    method: 'GET',
+  });
+}
+
+export async function sendChatMessageApi(payload: {
+  partnerId: string;
+  content?: string;
+  type?: 'text' | 'checkin' | 'reaction' | 'ping';
+  checkinData?: ChatCheckinData;
+}): Promise<{ success: boolean; message: ChatMessage }> {
+  return apiFetch<{ success: boolean; message: ChatMessage }>('/api/messages', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+

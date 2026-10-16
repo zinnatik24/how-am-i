@@ -7,6 +7,8 @@ import {
   PartnerProfile,
   CloudCheckin,
   PartnerReaction,
+  ChatMessage,
+  ChatCheckinData,
   getStoredUser,
   getStoredToken,
   removeStoredToken,
@@ -17,6 +19,8 @@ import {
   connectPartnerApi,
   fetchPartnerFeed,
   fetchIncomingReactions,
+  fetchMessagesApi,
+  sendChatMessageApi,
   sendPartnerPingApi,
   sendPartnerReactionApi,
 } from '../services/api';
@@ -51,6 +55,7 @@ interface AuthContextType {
   partners: PartnerProfile[];
   partnerFeed: CloudCheckin[];
   incomingReactions: PartnerReaction[];
+  chatMessages: ChatMessage[];
   isLoading: boolean;
   isAuthenticated: boolean;
   pushToken: string | null;
@@ -61,6 +66,13 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   connectPartner: (inviteCode: string) => Promise<{ success: boolean; partner?: PartnerProfile; error?: string }>;
   refreshFeed: () => Promise<void>;
+  fetchChatMessages: (partnerId?: string) => Promise<void>;
+  sendChatMessage: (
+    partnerId: string,
+    content?: string,
+    type?: 'text' | 'checkin' | 'reaction' | 'ping',
+    checkinData?: ChatCheckinData
+  ) => Promise<{ success: boolean; message?: ChatMessage }>;
   sendCarePing: (partnerId?: string) => Promise<{ success: boolean; message: string }>;
   sendCareReaction: (partnerId: string, reactionType: string, reactionLabel: string) => Promise<{ success: boolean; message: string }>;
 }
@@ -73,6 +85,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [partners, setPartners] = useState<PartnerProfile[]>([]);
   const [partnerFeed, setPartnerFeed] = useState<CloudCheckin[]>([]);
   const [incomingReactions, setIncomingReactions] = useState<PartnerReaction[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [pushToken, setPushToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [pendingInvite, setPendingInvite] = useState<PendingInvite | null>(null);
@@ -170,12 +183,26 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setupPush();
   }, [user]);
 
-  // Load partner feed when partners change
+  // Load partner feed & chat when partners change
   useEffect(() => {
     if (partners.length > 0) {
       refreshFeed();
+      fetchChatMessages();
     }
   }, [partners]);
+
+  const fetchChatMessages = async (partnerId?: string) => {
+    if (!token) return;
+    try {
+      const pid = partnerId || partners[0]?.id;
+      const res = await fetchMessagesApi(pid);
+      if (res && res.messages) {
+        setChatMessages(res.messages);
+      }
+    } catch (e) {
+      console.warn('[AUTH] Could not fetch chat messages:', e);
+    }
+  };
 
   const refreshFeed = async () => {
     if (!token) return;
@@ -186,19 +213,22 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       ]);
       setPartnerFeed(feed);
       setIncomingReactions(reactions);
+      if (partners.length > 0) {
+        await fetchChatMessages();
+      }
     } catch (e) {
       console.warn('[AUTH] Could not refresh partner feed:', e);
     }
   };
 
-  // Auto-poll partner updates & incoming care reactions every 6 seconds
+  // Auto-poll partner updates & chat messages every 4 seconds for responsive real-time feeling
   useEffect(() => {
     if (!token || !user) return;
     const timer = setInterval(() => {
       refreshFeed();
-    }, 6000);
+    }, 4000);
     return () => clearInterval(timer);
-  }, [token, user]);
+  }, [token, user, partners]);
 
   // Google Sign-In Flow
   const signInWithGoogle = async () => {
@@ -296,9 +326,50 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  const sendChatMessage = async (
+    partnerId: string,
+    content?: string,
+    type: 'text' | 'checkin' | 'reaction' | 'ping' = 'text',
+    checkinData?: ChatCheckinData
+  ) => {
+    try {
+      const optimisticMsg: ChatMessage = {
+        id: `opt_${Date.now()}`,
+        conversation_id: [user?.id || '', partnerId].sort().join('_'),
+        from_user_id: user?.id || '',
+        to_user_id: partnerId,
+        type,
+        content: content || null,
+        checkin_data: checkinData || null,
+        created_at: new Date().toISOString(),
+        from_name: user?.name,
+        from_avatar: user?.avatarUrl || undefined,
+      };
+      setChatMessages((prev) => [...prev, optimisticMsg]);
+
+      const res = await sendChatMessageApi({
+        partnerId,
+        content,
+        type,
+        checkinData,
+      });
+
+      if (res.success && res.message) {
+        setChatMessages((prev) =>
+          prev.map((m) => (m.id === optimisticMsg.id ? res.message : m))
+        );
+      }
+      return res;
+    } catch (err: any) {
+      console.error('[AUTH] Failed to send chat message:', err);
+      return { success: false, error: err.message || 'Ошибка отправки' };
+    }
+  };
+
   const sendCarePing = async (partnerId?: string) => {
     try {
       const res = await sendPartnerPingApi(partnerId);
+      await fetchChatMessages(partnerId);
       return res;
     } catch (err: any) {
       return { success: false, message: err.message || 'Ошибка отправки' };
@@ -308,6 +379,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const sendCareReaction = async (partnerId: string, reactionType: string, reactionLabel: string) => {
     try {
       const res = await sendPartnerReactionApi(partnerId, reactionType, reactionLabel);
+      await fetchChatMessages(partnerId);
       return res;
     } catch (err: any) {
       return { success: false, message: err.message || 'Ошибка отправки' };
@@ -320,6 +392,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setToken(null);
     setPartners([]);
     setPartnerFeed([]);
+    setChatMessages([]);
   };
 
   return (
@@ -330,6 +403,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         partners,
         partnerFeed,
         incomingReactions,
+        chatMessages,
         isLoading,
         isAuthenticated: !!user,
         pushToken,
@@ -340,6 +414,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         signOut,
         connectPartner,
         refreshFeed,
+        fetchChatMessages,
+        sendChatMessage,
         sendCarePing,
         sendCareReaction,
       }}
