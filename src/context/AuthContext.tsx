@@ -9,6 +9,7 @@ import {
   PartnerReaction,
   ChatMessage,
   ChatCheckinData,
+  ConversationItem,
   getStoredUser,
   getStoredToken,
   removeStoredToken,
@@ -21,6 +22,7 @@ import {
   fetchIncomingReactions,
   fetchMessagesApi,
   sendChatMessageApi,
+  fetchConversationsApi,
   sendPartnerPingApi,
   sendPartnerReactionApi,
 } from '../services/api';
@@ -53,6 +55,7 @@ interface AuthContextType {
   user: UserProfile | null;
   token: string | null;
   partners: PartnerProfile[];
+  conversations: ConversationItem[];
   partnerFeed: CloudCheckin[];
   incomingReactions: PartnerReaction[];
   chatMessages: ChatMessage[];
@@ -66,6 +69,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   connectPartner: (inviteCode: string) => Promise<{ success: boolean; partner?: PartnerProfile; error?: string }>;
   refreshFeed: () => Promise<void>;
+  fetchConversations: () => Promise<void>;
   fetchChatMessages: (partnerId?: string) => Promise<void>;
   sendChatMessage: (
     partnerId: string,
@@ -83,6 +87,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [user, setUser] = useState<UserProfile | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [partners, setPartners] = useState<PartnerProfile[]>([]);
+  const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [partnerFeed, setPartnerFeed] = useState<CloudCheckin[]>([]);
   const [incomingReactions, setIncomingReactions] = useState<PartnerReaction[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -191,6 +196,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [partners]);
 
+  const fetchConversations = async () => {
+    if (!token) return;
+    try {
+      const convs = await fetchConversationsApi();
+      setConversations(convs);
+    } catch (e) {
+      console.warn('[AUTH] Could not fetch conversations:', e);
+    }
+  };
+
   const fetchChatMessages = async (partnerId?: string) => {
     if (!token) return;
     try {
@@ -210,6 +225,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const [feed, reactions] = await Promise.all([
         fetchPartnerFeed().catch(() => []),
         fetchIncomingReactions().catch(() => []),
+        fetchConversations().catch(() => []),
       ]);
       setPartnerFeed(feed);
       setIncomingReactions(reactions);
@@ -391,6 +407,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setUser(null);
     setToken(null);
     setPartners([]);
+    setConversations([]);
     setPartnerFeed([]);
     setChatMessages([]);
   };
@@ -401,6 +418,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         user,
         token,
         partners,
+        conversations,
         partnerFeed,
         incomingReactions,
         chatMessages,
@@ -414,6 +432,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         signOut,
         connectPartner,
         refreshFeed,
+        fetchConversations,
         fetchChatMessages,
         sendChatMessage,
         sendCarePing,

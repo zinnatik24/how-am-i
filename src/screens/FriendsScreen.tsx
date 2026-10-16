@@ -16,7 +16,13 @@ import { CheckInRecord, QuadrantId } from '../types';
 import { QUADRANTS } from '../data/emotionsData';
 import { useLanguage } from '../i18n/LanguageContext';
 import { useAuth } from '../context/AuthContext';
-import { API_BASE_URL, ChatMessage, ChatCheckinData } from '../services/api';
+import {
+  API_BASE_URL,
+  ChatMessage,
+  ChatCheckinData,
+  ConversationItem,
+  PartnerProfile,
+} from '../services/api';
 import { getLocalizedEmotionName, getLocalizedContextTag } from '../utils/localizationHelper';
 import { triggerHaptic } from '../utils/haptics';
 
@@ -31,6 +37,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
     user,
     isAuthenticated,
     partners,
+    conversations,
     partnerFeed,
     chatMessages,
     pendingInvite,
@@ -40,11 +47,15 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
     signOut,
     connectPartner,
     refreshFeed,
+    fetchConversations,
     fetchChatMessages,
     sendChatMessage,
     sendCarePing,
     sendCareReaction,
   } = useAuth();
+
+  // Selected partner: if null -> show Chat List (Telegram/WhatsApp style); if set -> show Chat Room
+  const [selectedPartner, setSelectedPartner] = useState<PartnerProfile | null>(null);
 
   // Chat message input state
   const [inputText, setInputText] = useState<string>('');
@@ -61,14 +72,13 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
   // Settings / Partner Info Modal
   const [isInfoModalOpen, setIsInfoModalOpen] = useState<boolean>(false);
 
+  // Add Partner / Invite Modal
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState<boolean>(false);
+
   // Demo Login modal for development/testing
   const [isDemoModalOpen, setIsDemoModalOpen] = useState<boolean>(false);
 
-  // Primary partner (if connected) & their latest check-in
-  const primaryPartner = partners.length > 0 ? partners[0] : null;
-  const partnerLatestCheckIn = partnerFeed.length > 0 ? partnerFeed[0] : null;
-
-  // Auto scroll to bottom when messages update
+  // Auto-scroll to bottom when messages update
   useEffect(() => {
     if (chatMessages && chatMessages.length > 0) {
       setTimeout(() => {
@@ -76,6 +86,27 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
       }, 150);
     }
   }, [chatMessages.length]);
+
+  // If active partner is selected, periodically refresh their messages
+  useEffect(() => {
+    if (selectedPartner) {
+      fetchChatMessages(selectedPartner.id);
+    }
+  }, [selectedPartner]);
+
+  // Open chat room for a specific partner
+  const handleOpenChat = (partner: PartnerProfile) => {
+    triggerHaptic('light');
+    setSelectedPartner(partner);
+    fetchChatMessages(partner.id);
+  };
+
+  // Close chat room and return to chats list
+  const handleBackToList = () => {
+    triggerHaptic('light');
+    setSelectedPartner(null);
+    fetchConversations();
+  };
 
   // Generate Smart Invite Link for Messengers
   const getInviteUrl = () => {
@@ -136,8 +167,9 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
     const result = await connectPartner(pendingInvite.code);
     setIsConnecting(false);
 
-    if (result.success) {
+    if (result.success && result.partner) {
       triggerHaptic('success');
+      setSelectedPartner(result.partner);
       Alert.alert(
         'Вы связаны! ❤️',
         `Вы теперь на связи с ${pendingInvite.fromName || result.partner?.name || 'партнёром'}. Настроение и чат обновляются в реальном времени!`
@@ -158,10 +190,12 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
     const result = await connectPartner(partnerCodeInput.trim());
     setIsConnecting(false);
 
-    if (result.success) {
+    if (result.success && result.partner) {
       triggerHaptic('success');
       setPartnerCodeInput('');
       setShowCodeInput(false);
+      setIsInviteModalOpen(false);
+      setSelectedPartner(result.partner);
       Alert.alert(
         'Вы связаны! ❤️',
         `Вы успешно подключились к ${result.partner?.name}. Теперь вы можете общаться и видеть чекины друг друга!`
@@ -174,13 +208,13 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
 
   // Send Text Message
   const handleSendTextMessage = async () => {
-    if (!inputText.trim() || !primaryPartner || isSending) return;
+    if (!inputText.trim() || !selectedPartner || isSending) return;
     const textToSend = inputText.trim();
     setInputText('');
     setIsSending(true);
     triggerHaptic('light');
 
-    await sendChatMessage(primaryPartner.id, textToSend, 'text');
+    await sendChatMessage(selectedPartner.id, textToSend, 'text');
     setIsSending(false);
     setTimeout(() => {
       scrollViewRef.current?.scrollToEnd({ animated: true });
@@ -189,7 +223,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
 
   // Send Check-in Card into Chat
   const handleShareCheckInCard = async () => {
-    if (!primaryPartner) return;
+    if (!selectedPartner) return;
     triggerHaptic('medium');
 
     if (!latestCheckIn) {
@@ -227,7 +261,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
     setTimeout(() => setLastSentBanner(null), 3000);
 
     await sendChatMessage(
-      primaryPartner.id,
+      selectedPartner.id,
       latestCheckIn.note || `Отметил(а) настроение: ${emotionRu}`,
       'checkin',
       checkinData
@@ -240,12 +274,12 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
 
   // Care Ping: «Спросить: Как ты?»
   const handleSendPing = async () => {
-    if (!primaryPartner) return;
+    if (!selectedPartner) return;
     triggerHaptic('medium');
     setLastSentBanner('💭 Вы спросили: «Как ты?»');
     setTimeout(() => setLastSentBanner(null), 3000);
 
-    await sendCarePing(primaryPartner.id);
+    await sendCarePing(selectedPartner.id);
     setTimeout(() => {
       scrollViewRef.current?.scrollToEnd({ animated: true });
     }, 100);
@@ -253,12 +287,12 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
 
   // Care Reaction (Обнять, Я рядом, Горжусь, Хочешь поговорить?)
   const handleSendCareReaction = async (reactionType: string, reactionLabel: string) => {
-    if (!primaryPartner) return;
+    if (!selectedPartner) return;
     triggerHaptic('success');
     setLastSentBanner(reactionLabel);
     setTimeout(() => setLastSentBanner(null), 3000);
 
-    await sendCareReaction(primaryPartner.id, reactionType, reactionLabel);
+    await sendCareReaction(selectedPartner.id, reactionType, reactionLabel);
     setTimeout(() => {
       scrollViewRef.current?.scrollToEnd({ animated: true });
     }, 100);
@@ -304,6 +338,27 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
     return '💛';
   };
 
+  // Build the list of conversation items (using conversations from API or partners as fallback)
+  const conversationList: ConversationItem[] =
+    conversations && conversations.length > 0
+      ? conversations
+      : partners.map((p) => {
+          const feedItem = partnerFeed.find((f) => f.user_id === p.id);
+          return {
+            partner: p,
+            conversationId: [user?.id || '', p.id].sort().join('_'),
+            lastMessage: null,
+            latestCheckin: feedItem || null,
+          };
+        });
+
+  // Partner's latest check-in for the active chat room
+  const activePartnerCheckin = selectedPartner
+    ? conversationList.find((c) => c.partner.id === selectedPartner.id)?.latestCheckin ||
+      partnerFeed.find((f) => f.user_id === selectedPartner.id) ||
+      null
+    : null;
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -331,16 +386,16 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
               </View>
             </View>
 
-            <Text style={styles.welcomeTitle}>Чат для двоих{'\n'}с карточками настроения</Text>
+            <Text style={styles.welcomeTitle}>Чаты с близкими{'\n'}и карточки настроения</Text>
             <Text style={styles.welcomeDesc}>
               Узнавайте, как дела у любимого человека без лишних слов. Делитесь чекинами настроения,
-              отправляйте знаки заботы и пишите друг другу в вашем личном пространстве.
+              отправляйте знаки заботы и общайтесь в защищенных личных чатах.
             </Text>
 
             <View style={styles.featurePillList}>
               <View style={styles.featurePill}>
                 <Ionicons name="chatbubble-ellipses-outline" size={16} color="#4FD1C5" />
-                <Text style={styles.featurePillText}>Личный чат для двоих</Text>
+                <Text style={styles.featurePillText}>Чаты как в мессенджерах</Text>
               </View>
               <View style={styles.featurePill}>
                 <Ionicons name="pulse-outline" size={16} color="#FBBF24" />
@@ -371,8 +426,8 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
         </ScrollView>
       )}
 
-      {/* 2. STATE B: AUTHENTICATED, BUT NO PARTNER CONNECTED */}
-      {isAuthenticated && !primaryPartner && (
+      {/* 2. STATE B: AUTHENTICATED, BUT ZERO PARTNERS CONNECTED */}
+      {isAuthenticated && partners.length === 0 && (
         <ScrollView contentContainerStyle={styles.authScrollContent}>
           <View style={styles.header}>
             <View>
@@ -442,7 +497,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
               </View>
             </View>
 
-            <Text style={styles.inviteCardTitle}>Пригласите партнёра в чат</Text>
+            <Text style={styles.inviteCardTitle}>Создайте ваш первый чат</Text>
             <Text style={styles.inviteCardSubtitle}>
               Отправьте персональную ссылку в Telegram или WhatsApp. Ваш партнёр нажмёт на неё и мгновенно откроет ваш общий чат настроения.
             </Text>
@@ -504,29 +559,218 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
         </ScrollView>
       )}
 
-      {/* 3. STATE C: AUTHENTICATED WITH PARTNER (COUPLES EMOTIONAL CHAT ROOM) */}
-      {isAuthenticated && primaryPartner && (
+      {/* 3. STATE C1: CHATS LIST VIEW (TELEGRAM / WHATSAPP STYLE) */}
+      {isAuthenticated && partners.length > 0 && selectedPartner === null && (
+        <ScrollView style={styles.chatsListWrapper} contentContainerStyle={styles.chatsListContent}>
+          {/* Top Bar of Chats List */}
+          <View style={styles.chatsListHeader}>
+            <View>
+              <Text style={styles.chatsListHeaderTitle}>Близкие</Text>
+              <Text style={styles.chatsListHeaderSub}>Чаты и настроение</Text>
+            </View>
+
+            <View style={styles.chatsListHeaderActions}>
+              <TouchableOpacity
+                style={styles.addChatBtn}
+                onPress={() => setIsInviteModalOpen(true)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="person-add-outline" size={18} color="#4FD1C5" />
+                <Text style={styles.addChatBtnText}>Добавить</Text>
+              </TouchableOpacity>
+
+              {user && (
+                <TouchableOpacity
+                  style={styles.profileAvatarButton}
+                  onPress={() => setIsInfoModalOpen(true)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.profileAvatarButtonText}>
+                    {user.name ? user.name.charAt(0).toUpperCase() : 'Я'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+
+          {/* Quick Banner: Fast Invite Link */}
+          <View style={styles.quickInviteBanner}>
+            <View style={styles.quickInviteLeft}>
+              <Ionicons name="link-outline" size={20} color="#4FD1C5" />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.quickInviteTitle}>Пригласить в близкий круг</Text>
+                <Text style={styles.quickInviteDesc}>
+                  Код: <Text style={{ color: '#4FD1C5', fontWeight: '700' }}>{user?.inviteCode}</Text> • 1-клик в мессенджеры
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={styles.quickInviteActionBtn}
+              onPress={handleShareInviteLink}
+            >
+              <Ionicons name="share-outline" size={16} color="#0A0D12" />
+              <Text style={styles.quickInviteActionText}>Поделиться</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Section Heading */}
+          <View style={styles.chatsSectionHeaderRow}>
+            <Text style={styles.chatsSectionHeading}>ВАШИ ЧАТЫ</Text>
+            <Text style={styles.chatsCountBadge}>{conversationList.length}</Text>
+          </View>
+
+          {/* Chats / Partners List Items (Telegram/WhatsApp style) */}
+          <View style={styles.chatsItemsContainer}>
+            {conversationList.map((conv) => {
+              const partner = conv.partner;
+              const checkin = conv.latestCheckin;
+              const quadColor = getQuadrantColor(checkin?.quadrant);
+              const quadEmoji = getQuadrantEmoji(checkin?.quadrant);
+
+              // Snippet for last message
+              let lastMsgSnippet = 'Нажмите, чтобы открыть чат';
+              let lastMsgTime = '';
+
+              if (conv.lastMessage) {
+                const msg = conv.lastMessage;
+                const isMe = msg.from_user_id === user?.id;
+                const prefix = isMe ? 'Вы: ' : '';
+                lastMsgTime = formatMessageTime(msg.created_at);
+
+                if (msg.type === 'checkin') {
+                  const emotion =
+                    msg.checkin_data?.emotionNameRu ||
+                    msg.checkin_data?.emotion_id ||
+                    'настроением';
+                  lastMsgSnippet = `${prefix}⚡ Чекин: ${emotion}`;
+                } else if (msg.type === 'reaction') {
+                  lastMsgSnippet = `${prefix}${msg.content || 'Знак заботы'}`;
+                } else if (msg.type === 'ping') {
+                  lastMsgSnippet = `${prefix}💭 «Как ты?»`;
+                } else {
+                  lastMsgSnippet = `${prefix}${msg.content || ''}`;
+                }
+              } else if (checkin) {
+                lastMsgTime = formatTimeAgo(checkin.created_at);
+                const emName = getLocalizedEmotionName(
+                  checkin.emotion_id,
+                  checkin.emotion_id,
+                  language
+                );
+                lastMsgSnippet = `⚡ ${emName}${checkin.note ? ` — «${checkin.note}»` : ''}`;
+              }
+
+              return (
+                <TouchableOpacity
+                  key={partner.id}
+                  style={styles.chatRowItem}
+                  onPress={() => handleOpenChat(partner)}
+                  activeOpacity={0.7}
+                >
+                  {/* Left Avatar with Mood Ring & Online Pulse */}
+                  <View style={styles.chatRowAvatarBox}>
+                    <View
+                      style={[
+                        styles.chatRowAvatar,
+                        { borderColor: checkin ? quadColor : 'rgba(255, 255, 255, 0.15)' },
+                      ]}
+                    >
+                      <Text style={styles.chatRowAvatarLetter}>
+                        {partner.name.charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={styles.chatRowOnlineDot} />
+                  </View>
+
+                  {/* Middle: Partner Name, Mood Capsule, Last Message */}
+                  <View style={styles.chatRowContent}>
+                    <View style={styles.chatRowTopRow}>
+                      <Text style={styles.chatRowPartnerName} numberOfLines={1}>
+                        {partner.name}
+                      </Text>
+                      {lastMsgTime ? (
+                        <Text style={styles.chatRowTime}>{lastMsgTime}</Text>
+                      ) : null}
+                    </View>
+
+                    {/* Mood capsule pill */}
+                    <View style={styles.chatRowMoodPillRow}>
+                      {checkin ? (
+                        <View
+                          style={[
+                            styles.chatRowMoodPill,
+                            { backgroundColor: `${quadColor}22`, borderColor: `${quadColor}55` },
+                          ]}
+                        >
+                          <Text style={styles.chatRowMoodPillText}>
+                            {quadEmoji}{' '}
+                            {getLocalizedEmotionName(
+                              checkin.emotion_id,
+                              checkin.emotion_id,
+                              language
+                            )}
+                          </Text>
+                        </View>
+                      ) : (
+                        <View style={styles.chatRowMoodPillEmpty}>
+                          <Text style={styles.chatRowMoodPillEmptyText}>
+                            💬 На связи
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Last Message Snippet */}
+                    <Text style={styles.chatRowLastMsg} numberOfLines={1}>
+                      {lastMsgSnippet}
+                    </Text>
+                  </View>
+
+                  {/* Right Chevron */}
+                  <View style={styles.chatRowChevronBox}>
+                    <Ionicons name="chevron-forward" size={18} color="#718096" />
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </ScrollView>
+      )}
+
+      {/* 4. STATE C2: DEDICATED CHAT ROOM WITH SELECTED PARTNER */}
+      {isAuthenticated && selectedPartner && (
         <View style={styles.chatWrapper}>
-          {/* A. CHAT HEADER BAR */}
+          {/* A. CHAT HEADER WITH BACK BUTTON */}
           <View style={styles.chatHeader}>
             <View style={styles.chatHeaderLeft}>
+              {/* Back to Chats List Button */}
+              <TouchableOpacity
+                style={styles.chatBackButton}
+                onPress={handleBackToList}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="chevron-back" size={24} color="#4FD1C5" />
+                <Text style={styles.chatBackButtonText}>Чаты</Text>
+              </TouchableOpacity>
+
+              {/* Partner Avatar with Mood Ring */}
               <View
                 style={[
                   styles.partnerAvatar,
                   {
-                    borderColor: getQuadrantColor(partnerLatestCheckIn?.quadrant),
+                    borderColor: getQuadrantColor(activePartnerCheckin?.quadrant),
                   },
                 ]}
               >
                 <Text style={styles.partnerAvatarText}>
-                  {primaryPartner.name.charAt(0).toUpperCase()}
+                  {selectedPartner.name.charAt(0).toUpperCase()}
                 </Text>
               </View>
 
               <View style={styles.partnerHeaderMeta}>
                 <View style={styles.partnerHeaderNameRow}>
                   <Text style={styles.partnerHeaderName} numberOfLines={1}>
-                    {primaryPartner.name}
+                    {selectedPartner.name}
                   </Text>
                   <View style={styles.livePulseDot} />
                 </View>
@@ -535,32 +779,32 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
                 <TouchableOpacity
                   activeOpacity={0.8}
                   onPress={() => {
-                    if (partnerLatestCheckIn?.note) {
+                    if (activePartnerCheckin?.note) {
                       Alert.alert(
-                        `${primaryPartner.name}`,
+                        `${selectedPartner.name}`,
                         `Чувствует: ${getLocalizedEmotionName(
-                          partnerLatestCheckIn.emotion_id,
-                          partnerLatestCheckIn.emotion_id,
+                          activePartnerCheckin.emotion_id,
+                          activePartnerCheckin.emotion_id,
                           language
-                        )}\n\n«${partnerLatestCheckIn.note}»\n\n${formatTimeAgo(
-                          partnerLatestCheckIn.created_at
+                        )}\n\n«${activePartnerCheckin.note}»\n\n${formatTimeAgo(
+                          activePartnerCheckin.created_at
                         )}`
                       );
                     }
                   }}
                   style={styles.partnerMoodCapsule}
                 >
-                  {partnerLatestCheckIn ? (
+                  {activePartnerCheckin ? (
                     <Text style={styles.partnerMoodCapsuleText} numberOfLines={1}>
-                      {getQuadrantEmoji(partnerLatestCheckIn.quadrant)}{' '}
+                      {getQuadrantEmoji(activePartnerCheckin.quadrant)}{' '}
                       <Text style={{ fontWeight: '700', color: '#E2E8F0' }}>
                         {getLocalizedEmotionName(
-                          partnerLatestCheckIn.emotion_id,
-                          partnerLatestCheckIn.emotion_id,
+                          activePartnerCheckin.emotion_id,
+                          activePartnerCheckin.emotion_id,
                           language
                         )}
                       </Text>{' '}
-                      • {formatTimeAgo(partnerLatestCheckIn.created_at)}
+                      • {formatTimeAgo(activePartnerCheckin.created_at)}
                     </Text>
                   ) : (
                     <Text style={styles.partnerMoodCapsuleText}>
@@ -578,7 +822,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
                 onPress={() => {
                   triggerHaptic('light');
                   refreshFeed();
-                  fetchChatMessages();
+                  fetchChatMessages(selectedPartner.id);
                 }}
               >
                 <Ionicons name="refresh" size={18} color="#A0AEC0" />
@@ -612,7 +856,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
             <View style={styles.chatWelcomeNotice}>
               <Ionicons name="heart" size={20} color="#ED64A6" />
               <Text style={styles.chatWelcomeNoticeText}>
-                Ваше безопасное пространство для двоих.{'\n'}
+                Личный чат с {selectedPartner.name}.{'\n'}
                 Делитесь чувствами, чекинами и согревайте заботой.
               </Text>
             </View>
@@ -660,12 +904,12 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
                             <Text style={styles.checkinSenderAvatarText}>
                               {isMe
                                 ? user?.name?.charAt(0).toUpperCase() || 'Я'
-                                : primaryPartner.name.charAt(0).toUpperCase()}
+                                : selectedPartner.name.charAt(0).toUpperCase()}
                             </Text>
                           </View>
                           <View>
                             <Text style={styles.checkinCardSenderName}>
-                              {isMe ? 'Вы отметили настроение' : `${primaryPartner.name} отметил(а) настроение`}
+                              {isMe ? 'Вы отметили настроение' : `${selectedPartner.name} отметил(а) настроение`}
                             </Text>
                             <Text style={styles.checkinCardTime}>
                               {formatMessageTime(msg.created_at)}
@@ -785,7 +1029,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
                     <View style={styles.reactionMessageCard}>
                       <View style={styles.reactionMessageContent}>
                         <Text style={styles.reactionMessageSender}>
-                          {isMe ? 'Вы отправили:' : `${msg.from_name || primaryPartner.name}:`}
+                          {isMe ? 'Вы отправили:' : `${msg.from_name || selectedPartner.name}:`}
                         </Text>
                         <Text style={styles.reactionMessageText}>{msg.content}</Text>
                         <Text style={styles.messageTimestamp}>
@@ -824,7 +1068,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
                         <Text style={styles.pingMessageTitle}>
                           {isMe
                             ? 'Вы поинтересовались: «Как ты?»'
-                            : `${msg.from_name || primaryPartner.name} интересуется: «Как ты?»`}
+                            : `${msg.from_name || selectedPartner.name} интересуется: «Как ты?»`}
                         </Text>
                       </View>
 
@@ -861,7 +1105,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
                   <View style={[styles.textBubble, isMe ? styles.textBubbleMe : styles.textBubblePartner]}>
                     {!isMe && (
                       <Text style={styles.partnerBubbleAuthor}>
-                        {msg.from_name || primaryPartner.name}
+                        {msg.from_name || selectedPartner.name}
                       </Text>
                     )}
                     <Text style={styles.textMessageContent}>{msg.content}</Text>
@@ -965,7 +1209,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
             {/* Text Input Field */}
             <TextInput
               style={styles.textInputField}
-              placeholder={`Сообщение для ${primaryPartner.name.split(' ')[0]}...`}
+              placeholder={`Сообщение для ${selectedPartner.name.split(' ')[0]}...`}
               placeholderTextColor="#718096"
               value={inputText}
               onChangeText={setInputText}
@@ -993,7 +1237,72 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
         </View>
       )}
 
-      {/* 4. MODAL: PARTNER INFO & SETTINGS */}
+      {/* 5. MODAL: INVITE NEW PARTNER MODAL */}
+      <Modal
+        visible={isInviteModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsInviteModalOpen(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>Пригласить близкого</Text>
+              <TouchableOpacity onPress={() => setIsInviteModalOpen(false)}>
+                <Ionicons name="close" size={22} color="#A0AEC0" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalSubtitle}>
+              Отправьте ссылку-приглашение близкому человеку или введите код, который он вам прислал:
+            </Text>
+
+            <TouchableOpacity
+              style={styles.primaryActionButton}
+              onPress={handleShareInviteLink}
+            >
+              <Ionicons name="paper-plane" size={18} color="#0A0D12" />
+              <Text style={styles.primaryActionButtonText}>Отправить ссылку в мессенджер</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.copyCodePill}
+              onPress={handleCopyCodeOnly}
+            >
+              <Text style={styles.copyCodePillText}>
+                Ваш инвайт-код: <Text style={styles.copyCodeBold}>{user?.inviteCode}</Text>
+              </Text>
+              <Ionicons name="copy-outline" size={14} color="#A0AEC0" />
+            </TouchableOpacity>
+
+            <View style={{ marginTop: 12, width: '100%' }}>
+              <Text style={styles.modalUserLabel}>Ввести код от партнёра:</Text>
+              <View style={styles.codeEntryBox}>
+                <TextInput
+                  style={styles.codeEntryInput}
+                  placeholder="6-значный код..."
+                  placeholderTextColor="#718096"
+                  value={partnerCodeInput}
+                  onChangeText={setPartnerCodeInput}
+                  autoCapitalize="characters"
+                  maxLength={8}
+                />
+                <TouchableOpacity
+                  style={styles.codeEntryBtn}
+                  onPress={handleConnectPartnerByCode}
+                  disabled={isConnecting}
+                >
+                  <Text style={styles.codeEntryBtnText}>
+                    {isConnecting ? '...' : 'Связать'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 6. MODAL: PROFILE & SETTINGS */}
       <Modal
         visible={isInfoModalOpen}
         transparent
@@ -1003,7 +1312,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>Близкие и Настройки</Text>
+              <Text style={styles.modalTitle}>Профиль и настройки</Text>
               <TouchableOpacity onPress={() => setIsInfoModalOpen(false)}>
                 <Ionicons name="close" size={22} color="#A0AEC0" />
               </TouchableOpacity>
@@ -1035,29 +1344,22 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
               </View>
             )}
 
-            {primaryPartner && (
-              <View style={styles.modalPartnerBox}>
-                <Text style={styles.modalUserLabel}>Ваш партнёр:</Text>
-                <Text style={styles.modalUserName}>{primaryPartner.name}</Text>
-                <Text style={styles.modalUserEmail}>{primaryPartner.email}</Text>
-              </View>
-            )}
-
             <TouchableOpacity
               style={styles.modalSignOutBtn}
               onPress={() => {
                 setIsInfoModalOpen(false);
+                setSelectedPartner(null);
                 signOut();
               }}
             >
               <Ionicons name="log-out-outline" size={18} color="#FC8181" />
-              <Text style={styles.modalSignOutBtnText}>Выйти из профиля</Text>
+              <Text style={styles.modalSignOutBtnText}>Выйти из аккаунта</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* 5. MODAL: DEMO LOGIN (Developer zero-config testing) */}
+      {/* 7. MODAL: DEMO LOGIN */}
       <Modal
         visible={isDemoModalOpen}
         transparent
@@ -1118,7 +1420,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
 
-  // Header
+  // Header for auth / onboarding
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1274,7 +1576,7 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
 
-  // Invite Partner
+  // Invite Partner Card
   invitePartnerCard: {
     backgroundColor: '#12161F',
     borderRadius: 28,
@@ -1410,8 +1712,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 13,
   },
-
-  // Incoming Invite Card
   incomingInviteCard: {
     backgroundColor: 'rgba(237, 100, 166, 0.12)',
     borderRadius: 20,
@@ -1447,7 +1747,242 @@ const styles = StyleSheet.create({
   },
 
   // ============================================
-  // COUPLES EMOTIONAL CHAT ROOM STYLING
+  // 1. CHATS LIST VIEW (TELEGRAM/WHATSAPP STYLE)
+  // ============================================
+  chatsListWrapper: {
+    flex: 1,
+    backgroundColor: '#0A0D12',
+  },
+  chatsListContent: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 40,
+    maxWidth: 600,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  chatsListHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  chatsListHeaderTitle: {
+    fontSize: 28,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: -0.5,
+  },
+  chatsListHeaderSub: {
+    fontSize: 13,
+    color: '#718096',
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  chatsListHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  addChatBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(79, 209, 197, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(79, 209, 197, 0.3)',
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    gap: 6,
+  },
+  addChatBtnText: {
+    color: '#4FD1C5',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  profileAvatarButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#1E2433',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  profileAvatarButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+
+  // Quick Invite Banner
+  quickInviteBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#121620',
+    borderRadius: 20,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(79, 209, 197, 0.25)',
+    marginBottom: 20,
+    gap: 10,
+  },
+  quickInviteLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  quickInviteTitle: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  quickInviteDesc: {
+    color: '#A0AEC0',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  quickInviteActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#4FD1C5',
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    gap: 4,
+  },
+  quickInviteActionText: {
+    color: '#0A0D12',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
+  // Chats Section Header
+  chatsSectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+    paddingHorizontal: 4,
+  },
+  chatsSectionHeading: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#718096',
+    letterSpacing: 0.8,
+  },
+  chatsCountBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    color: '#A0AEC0',
+    fontSize: 11,
+    fontWeight: '700',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 8,
+  },
+
+  // Chat Row Items
+  chatsItemsContainer: {
+    gap: 8,
+  },
+  chatRowItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#12161F',
+    borderRadius: 20,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    gap: 12,
+  },
+  chatRowAvatarBox: {
+    position: 'relative',
+  },
+  chatRowAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#1A202C',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2.5,
+  },
+  chatRowAvatarLetter: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  chatRowOnlineDot: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 13,
+    height: 13,
+    borderRadius: 6.5,
+    backgroundColor: '#48BB78',
+    borderWidth: 2,
+    borderColor: '#12161F',
+  },
+  chatRowContent: {
+    flex: 1,
+    gap: 3,
+  },
+  chatRowTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  chatRowPartnerName: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  chatRowTime: {
+    color: '#718096',
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  chatRowMoodPillRow: {
+    flexDirection: 'row',
+    marginVertical: 1,
+  },
+  chatRowMoodPill: {
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  chatRowMoodPillText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  chatRowMoodPillEmpty: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+  },
+  chatRowMoodPillEmptyText: {
+    color: '#718096',
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  chatRowLastMsg: {
+    color: '#A0AEC0',
+    fontSize: 13,
+    lineHeight: 17,
+  },
+  chatRowChevronBox: {
+    paddingLeft: 4,
+  },
+
+  // ============================================
+  // 2. DEDICATED CHAT ROOM WITH SELECTED PARTNER
   // ============================================
   chatWrapper: {
     flex: 1,
@@ -1462,8 +1997,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     backgroundColor: '#11151C',
     borderBottomWidth: 1,
     borderBottomColor: '#1A202C',
@@ -1472,13 +2007,25 @@ const styles = StyleSheet.create({
   chatHeaderLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
     flex: 1,
   },
+  chatBackButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingRight: 4,
+  },
+  chatBackButtonText: {
+    color: '#4FD1C5',
+    fontSize: 14,
+    fontWeight: '700',
+    marginLeft: -4,
+  },
   partnerAvatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: '#1E2433',
     justifyContent: 'center',
     alignItems: 'center',
@@ -1486,11 +2033,12 @@ const styles = StyleSheet.create({
   },
   partnerAvatarText: {
     color: '#FFFFFF',
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '800',
   },
   partnerHeaderMeta: {
     flex: 1,
+    marginLeft: 4,
   },
   partnerHeaderNameRow: {
     flexDirection: 'row',
@@ -1499,22 +2047,22 @@ const styles = StyleSheet.create({
   },
   partnerHeaderName: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800',
     letterSpacing: -0.2,
   },
   livePulseDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
     backgroundColor: '#48BB78',
   },
   partnerMoodCapsule: {
-    marginTop: 2,
+    marginTop: 1,
   },
   partnerMoodCapsuleText: {
     color: '#A0AEC0',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '500',
   },
   chatHeaderActions: {
@@ -1531,7 +2079,7 @@ const styles = StyleSheet.create({
   // Floating Banner
   floatingBanner: {
     position: 'absolute',
-    top: 64,
+    top: 60,
     alignSelf: 'center',
     backgroundColor: 'rgba(26, 32, 44, 0.95)',
     borderWidth: 1,
@@ -1983,7 +2531,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
   },
 
-  // Modal
+  // Modals
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.75)',
@@ -2014,7 +2562,7 @@ const styles = StyleSheet.create({
   modalSubtitle: {
     fontSize: 13,
     color: '#A0AEC0',
-    marginBottom: 20,
+    marginBottom: 16,
     lineHeight: 18,
   },
   modalUserBox: {
@@ -2069,14 +2617,6 @@ const styles = StyleSheet.create({
   modalCopyCodeBtnText: {
     color: '#A0AEC0',
     fontSize: 12,
-  },
-  modalPartnerBox: {
-    backgroundColor: '#12161F',
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
   },
   modalSignOutBtn: {
     flexDirection: 'row',

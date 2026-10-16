@@ -693,6 +693,72 @@ app.post('/api/messages', authMiddleware, async (req, res) => {
   }
 });
 
+// 14. Conversations List (Telegram / WhatsApp style conversation stream)
+app.get('/api/conversations', authMiddleware, async (req, res) => {
+  try {
+    const friendsRes = await query(
+      `SELECT u.id, u.name, u.avatar_url, u.email, f.status, f.created_at as friendship_date
+       FROM friendships f
+       JOIN users u ON u.id = f.friend_id
+       WHERE f.user_id = $1 AND f.status = 'accepted'
+       ORDER BY f.created_at ASC`,
+      [req.user.userId]
+    );
+
+    const conversations = [];
+
+    for (const friend of friendsRes.rows) {
+      const convId = [req.user.userId, friend.id].sort().join('_');
+
+      // Get last message in this conversation
+      const lastMsgRes = await query(
+        `SELECT m.*, u.name as from_name
+         FROM messages m
+         JOIN users u ON u.id = m.from_user_id
+         WHERE m.conversation_id = $1
+         ORDER BY m.created_at DESC
+         LIMIT 1`,
+        [convId]
+      );
+
+      // Get friend's latest check-in
+      const latestCheckinRes = await query(
+        `SELECT c.*
+         FROM checkins c
+         WHERE c.user_id = $1 AND (c.share_with_partners = true OR c.share_with_partners IS NULL)
+         ORDER BY c.created_at DESC
+         LIMIT 1`,
+        [friend.id]
+      );
+
+      conversations.push({
+        partner: {
+          id: friend.id,
+          name: friend.name,
+          email: friend.email,
+          avatarUrl: friend.avatar_url,
+          status: friend.status,
+        },
+        conversationId: convId,
+        lastMessage: lastMsgRes.rows[0] || null,
+        latestCheckin: latestCheckinRes.rows[0] || null,
+      });
+    }
+
+    // Sort conversations so that the one with the most recent message or checkin is on top
+    conversations.sort((a, b) => {
+      const timeA = new Date(a.lastMessage?.created_at || a.latestCheckin?.created_at || 0).getTime();
+      const timeB = new Date(b.lastMessage?.created_at || b.latestCheckin?.created_at || 0).getTime();
+      return timeB - timeA;
+    });
+
+    res.json({ conversations });
+  } catch (err) {
+    console.error('[CONVERSATIONS GET] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 9. Web Mobile App Static Serving
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

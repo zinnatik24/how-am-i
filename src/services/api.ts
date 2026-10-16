@@ -276,3 +276,19 @@ export async function sendChatMessageApi(payload: {
   });
 }
 
+// 12. Conversations List API (WhatsApp/Telegram-like feed)
+export interface ConversationItem {
+  partner: PartnerProfile;
+  conversationId: string;
+  lastMessage?: ChatMessage | null;
+  latestCheckin?: CloudCheckin | null;
+}
+
+export async function fetchConversationsApi(): Promise<ConversationItem[]> {
+  const data = await apiFetch<{ conversations: ConversationItem[] }>('/api/conversations', {
+    method: 'GET',
+  });
+  return data.conversations || [];
+}
+
+
