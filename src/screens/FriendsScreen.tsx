@@ -1462,9 +1462,11 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
                             triggerHaptic('medium');
                             onOpenCheckIn();
                           }}
+                          activeOpacity={0.85}
                         >
-                          <Ionicons name="create-outline" size={15} color="#0A0D12" />
-                          <Text style={styles.pingReplyBtnText}>Ответить чекином настроения</Text>
+                          <Ionicons name="sparkles" size={14} color="#0A0D12" />
+                          <Text style={styles.pingReplyBtnText}>Отметить состояние</Text>
+                          <Ionicons name="arrow-forward" size={13} color="#0A0D12" />
                         </TouchableOpacity>
                       )}
 
@@ -1504,7 +1506,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
             })}
           </ScrollView>
 
-          {/* C. WIDE BUTTON: ПОДЕЛИТЬСЯ СОСТОЯНИЕМ (Заменяет старые мелкие кнопки) */}
+          {/* C. TACTILE CHECK-IN BUTTON IN CHAT */}
           <View style={styles.shareMoodBar}>
             <TouchableOpacity
               style={styles.wideShareButton}
@@ -1512,10 +1514,25 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
               activeOpacity={0.85}
             >
               <View style={styles.wideShareIconRing}>
-                <Ionicons name="sparkles" size={17} color="#0A0D12" />
+                <Ionicons name="sparkles" size={17} color="#4FD1C5" />
               </View>
-              <Text style={styles.wideShareButtonText}>Поделиться состоянием</Text>
-              <Ionicons name="chevron-up" size={17} color="#4FD1C5" />
+              <View style={styles.wideShareTextWrap}>
+                <Text style={styles.wideShareButtonText}>Отметить состояние</Text>
+                <Text style={styles.wideShareSubText}>
+                  {selectedPartner ? `Поделиться с ${selectedPartner.name.split(' ')[0]}` : 'Поделиться в диалоге'}
+                </Text>
+              </View>
+              <View style={styles.wideShareRightCluster}>
+                <View style={styles.wideShareDotsRow}>
+                  <View style={[styles.wideShareDot, { backgroundColor: '#F56565' }]} />
+                  <View style={[styles.wideShareDot, { backgroundColor: '#ECC94B' }]} />
+                  <View style={[styles.wideShareDot, { backgroundColor: '#4299E1' }]} />
+                  <View style={[styles.wideShareDot, { backgroundColor: '#48BB78' }]} />
+                </View>
+                <View style={styles.wideShareChevronCircle}>
+                  <Ionicons name="chevron-up" size={14} color="#4FD1C5" />
+                </View>
+              </View>
             </TouchableOpacity>
           </View>
 
@@ -1597,17 +1614,38 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
             >
               {/* TOP: ZEN ACTION CARD «ОТМЕТИТЬ СОСТОЯНИЕ» */}
               <View style={styles.shareZenCard}>
-                <View style={styles.shareZenHeader}>
-                  <Text style={styles.shareZenTitle}>Отметить состояние прямо сейчас</Text>
-                  <Text style={styles.shareZenSub}>Выберите чувства на карте и отправьте в диалог</Text>
+                <View style={styles.shareZenHeaderRow}>
+                  <View style={styles.shareZenBadge}>
+                    <Ionicons name="sparkles" size={20} color="#4FD1C5" />
+                  </View>
+                  <View style={styles.shareZenHeaderTexts}>
+                    <Text style={styles.shareZenTitle}>Отметить состояние прямо сейчас</Text>
+                    <Text style={styles.shareZenSub}>
+                      {selectedPartner
+                        ? `Определите эмоции на карте чувств для ${selectedPartner.name.split(' ')[0]}`
+                        : 'Выберите чувства на карте и отправьте в диалог'}
+                    </Text>
+                  </View>
                 </View>
 
-                {/* 4-Color Spectrum Bar */}
-                <View style={styles.shareZenSpectrumRow}>
-                  <View style={[styles.shareZenPill, { backgroundColor: '#FF5252' }]} />
-                  <View style={[styles.shareZenPill, { backgroundColor: '#FBBF24' }]} />
-                  <View style={[styles.shareZenPill, { backgroundColor: '#3B82F6' }]} />
-                  <View style={[styles.shareZenPill, { backgroundColor: '#10B981' }]} />
+                {/* 4 Quadrants Visual Grid Chips */}
+                <View style={styles.shareZenQuadrantsRow}>
+                  <View style={[styles.shareZenQuadPill, { backgroundColor: 'rgba(245, 101, 101, 0.15)', borderColor: 'rgba(245, 101, 101, 0.4)' }]}>
+                    <View style={[styles.shareZenDot, { backgroundColor: '#F56565' }]} />
+                    <Text style={[styles.shareZenQuadText, { color: '#FEB2B2' }]}>Красный</Text>
+                  </View>
+                  <View style={[styles.shareZenQuadPill, { backgroundColor: 'rgba(236, 201, 75, 0.15)', borderColor: 'rgba(236, 201, 75, 0.4)' }]}>
+                    <View style={[styles.shareZenDot, { backgroundColor: '#ECC94B' }]} />
+                    <Text style={[styles.shareZenQuadText, { color: '#FAF089' }]}>Жёлтый</Text>
+                  </View>
+                  <View style={[styles.shareZenQuadPill, { backgroundColor: 'rgba(66, 153, 225, 0.15)', borderColor: 'rgba(66, 153, 225, 0.4)' }]}>
+                    <View style={[styles.shareZenDot, { backgroundColor: '#4299E1' }]} />
+                    <Text style={[styles.shareZenQuadText, { color: '#90CDF4' }]}>Синий</Text>
+                  </View>
+                  <View style={[styles.shareZenQuadPill, { backgroundColor: 'rgba(72, 187, 120, 0.15)', borderColor: 'rgba(72, 187, 120, 0.4)' }]}>
+                    <View style={[styles.shareZenDot, { backgroundColor: '#48BB78' }]} />
+                    <Text style={[styles.shareZenQuadText, { color: '#9AE6B4' }]}>Зелёный</Text>
+                  </View>
                 </View>
 
                 <TouchableOpacity
@@ -1618,9 +1656,9 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
                   }}
                   style={styles.shareZenActionButton}
                 >
-                  <Ionicons name="sparkles" size={16} color="#0A0D12" />
-                  <Text style={styles.shareZenActionBtnText}>Открыть карту чувств</Text>
-                  <Ionicons name="arrow-forward" size={16} color="#0A0D12" />
+                  <Ionicons name="sparkles" size={17} color="#0A0D12" />
+                  <Text style={styles.shareZenActionBtnText}>Открыть карту 144 чувств</Text>
+                  <Ionicons name="arrow-forward" size={17} color="#0A0D12" />
                 </TouchableOpacity>
               </View>
 
@@ -1660,15 +1698,18 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
                       return (
                         <TouchableOpacity
                           key={item.id}
-                          style={[styles.recentShareCard, { borderLeftColor: qColor }]}
+                          style={[
+                            styles.recentShareCard,
+                            { borderLeftColor: qColor, borderColor: `${qColor}40` },
+                          ]}
                           onPress={() => handleShareSpecificCheckIn(item)}
                           activeOpacity={0.75}
                         >
                           <View style={styles.recentShareCardContent}>
                             <View style={styles.recentShareCardTop}>
-                              <View style={styles.recentShareEmotionsPill}>
-                                <QuadrantIcon quadrantId={quadId} size={15} />
-                                <Text style={styles.recentShareEmotionTitle} numberOfLines={1}>
+                              <View style={[styles.recentShareEmotionsPill, { backgroundColor: `${qColor}20` }]}>
+                                <QuadrantIcon quadrantId={quadId} size={15} color={qColor} />
+                                <Text style={[styles.recentShareEmotionTitle, { color: '#FFFFFF' }]} numberOfLines={1}>
                                   {titleStr}
                                 </Text>
                               </View>
@@ -1683,7 +1724,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
                           </View>
 
                           <View style={styles.recentShareActionBox}>
-                            <View style={styles.sendMiniCircle}>
+                            <View style={[styles.sendMiniCircle, { backgroundColor: qColor }]}>
                               <Ionicons name="arrow-up" size={16} color="#0A0D12" />
                             </View>
                           </View>
@@ -3037,9 +3078,9 @@ const styles = StyleSheet.create({
 
   // Share Mood Bar & Wide Button
   shareMoodBar: {
-    backgroundColor: '#11151C',
+    backgroundColor: '#0F131A',
     borderTopWidth: 1,
-    borderTopColor: '#1A202C',
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
     paddingHorizontal: 12,
     paddingTop: 8,
     paddingBottom: 4,
@@ -3048,27 +3089,70 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(79, 209, 197, 0.1)',
-    borderRadius: 16,
+    backgroundColor: '#151B26',
+    borderRadius: 18,
     paddingVertical: 10,
     paddingHorizontal: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(79, 209, 197, 0.3)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(79, 209, 197, 0.35)',
+    shadowColor: '#4FD1C5',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 3,
   },
   wideShareIconRing: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#4FD1C5',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(79, 209, 197, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(79, 209, 197, 0.3)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  wideShareButtonText: {
+  wideShareTextWrap: {
     flex: 1,
-    color: '#E2E8F0',
+    marginLeft: 12,
+  },
+  wideShareButtonText: {
+    color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '700',
-    marginLeft: 10,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  wideShareSubText: {
+    color: '#8E9BAE',
+    fontSize: 11,
+    marginTop: 1,
+    fontWeight: '500',
+  },
+  wideShareRightCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  wideShareDotsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  wideShareDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  wideShareChevronCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(79, 209, 197, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   // Chat Input Bar
@@ -3247,51 +3331,93 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   shareZenCard: {
-    backgroundColor: '#121620',
+    backgroundColor: '#141A24',
     borderWidth: 1.5,
-    borderColor: '#1E2532',
-    borderRadius: 20,
-    padding: 18,
+    borderColor: 'rgba(79, 209, 197, 0.4)',
+    borderRadius: 22,
+    padding: 16,
     marginBottom: 16,
+    shadowColor: '#4FD1C5',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 5,
   },
-  shareZenHeader: {
-    marginBottom: 12,
+  shareZenHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 14,
+  },
+  shareZenBadge: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(79, 209, 197, 0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(79, 209, 197, 0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shareZenHeaderTexts: {
+    flex: 1,
   },
   shareZenTitle: {
     color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
     letterSpacing: -0.2,
   },
   shareZenSub: {
-    color: '#8E9BAE',
+    color: '#94A3B8',
     fontSize: 12,
     marginTop: 3,
+    lineHeight: 16,
   },
-  shareZenSpectrumRow: {
+  shareZenQuadrantsRow: {
     flexDirection: 'row',
     gap: 6,
     marginBottom: 14,
   },
-  shareZenPill: {
+  shareZenQuadPill: {
     flex: 1,
-    height: 4,
-    borderRadius: 2,
-    opacity: 0.85,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  shareZenDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  shareZenQuadText: {
+    fontSize: 10,
+    fontWeight: '700',
   },
   shareZenActionButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#4FD1C5',
     borderRadius: 14,
     paddingVertical: 12,
     gap: 8,
+    shadowColor: '#4FD1C5',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   shareZenActionBtnText: {
     color: '#0A0D12',
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
 
   // Recent Checkins in Share Modal
@@ -3330,12 +3456,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#151922',
-    borderRadius: 14,
+    backgroundColor: '#141822',
+    borderRadius: 16,
     padding: 12,
     borderLeftWidth: 4,
     borderWidth: 1,
-    borderColor: '#202632',
+    borderColor: '#242D3D',
   },
   recentShareCardContent: {
     flex: 1,
@@ -3345,22 +3471,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 4,
+    marginBottom: 6,
   },
   recentShareEmotionsPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    flex: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    maxWidth: '75%',
   },
   recentShareEmoji: {
     fontSize: 16,
   },
   recentShareEmotionTitle: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
-    flex: 1,
   },
   recentShareTime: {
     color: '#718096',
@@ -3370,6 +3499,7 @@ const styles = StyleSheet.create({
     color: '#CBD5E0',
     fontSize: 12,
     fontStyle: 'italic',
+    marginTop: 2,
   },
   recentShareActionBox: {
     alignItems: 'center',
@@ -3382,6 +3512,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#4FD1C5',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#4FD1C5',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 2,
   },
 
   // Insight Section in Check-in Cards
