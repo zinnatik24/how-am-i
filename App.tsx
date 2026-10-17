@@ -7,7 +7,6 @@ import {
   Platform,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import Svg, { Line } from 'react-native-svg';
 import {
   SafeAreaProvider,
   SafeAreaView,
@@ -32,7 +31,7 @@ type TabKey = 'today' | 'journal' | 'friends' | 'trends' | 'settings';
 
 function MainApp() {
   const { t } = useLanguage();
-  const { user, isAuthenticated, refreshFeed, broadcastCheckinToChat } = useAuth();
+  const { user, isAuthenticated, refreshFeed, broadcastCheckinToChat, totalUnreadCount } = useAuth();
   const insets = useSafeAreaInsets();
   const [currentTab, setCurrentTab] = useState<TabKey>('today');
   const [checkIns, setCheckIns] = useState<CheckInRecord[]>([]);
@@ -184,7 +183,7 @@ function MainApp() {
       {/* Bottom Tab Bar */}
       <View
         nativeID="bottom-tab-bar"
-        accessibilityRole="navigation"
+        accessibilityRole="tablist"
         style={[
           styles.tabBar,
           {
@@ -244,11 +243,20 @@ function MainApp() {
           accessibilityLabel={t('tab.friends')}
           activeOpacity={0.75}
         >
-          <Ionicons
-            name={currentTab === 'friends' ? 'people' : 'people-outline'}
-            size={25}
-            color={currentTab === 'friends' ? '#4FD1C5' : '#718096'}
-          />
+          <View style={styles.tabIconWrapper}>
+            <Ionicons
+              name={currentTab === 'friends' ? 'people' : 'people-outline'}
+              size={25}
+              color={currentTab === 'friends' ? '#4FD1C5' : '#718096'}
+            />
+            {totalUnreadCount > 0 && (
+              <View style={styles.tabUnreadBadge}>
+                <Text style={styles.tabUnreadBadgeText}>
+                  {totalUnreadCount > 99 ? '99+' : totalUnreadCount}
+                </Text>
+              </View>
+            )}
+          </View>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -331,5 +339,38 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 8,
     elevation: 5,
+  },
+  tabIconWrapper: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 32,
+    height: 32,
+  },
+  tabUnreadBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -8,
+    backgroundColor: '#FF5252',
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: '#11151C',
+    shadowColor: '#FF5252',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 3,
+    elevation: 4,
+  },
+  tabUnreadBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+    textAlign: 'center',
+    lineHeight: 12,
   },
 });

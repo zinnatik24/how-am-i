@@ -399,13 +399,32 @@ export interface ConversationItem {
   conversationId: string;
   lastMessage?: ChatMessage | null;
   latestCheckin?: CloudCheckin | null;
+  unreadCount?: number;
 }
 
-export async function fetchConversationsApi(): Promise<ConversationItem[]> {
-  const data = await apiFetch<{ conversations: ConversationItem[] }>('/api/conversations', {
+export async function fetchConversationsApi(): Promise<{
+  conversations: ConversationItem[];
+  totalUnreadCount: number;
+}> {
+  const data = await apiFetch<{
+    conversations: ConversationItem[];
+    totalUnreadCount?: number;
+  }>('/api/conversations', {
     method: 'GET',
   });
-  return data.conversations || [];
+  const conversations = data.conversations || [];
+  const totalUnreadCount =
+    typeof data.totalUnreadCount === 'number'
+      ? data.totalUnreadCount
+      : conversations.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
+  return { conversations, totalUnreadCount };
+}
+
+export async function markConversationAsReadApi(partnerId: string): Promise<void> {
+  await apiFetch('/api/messages/read', {
+    method: 'POST',
+    body: JSON.stringify({ partnerId }),
+  }).catch(() => {});
 }
 
 

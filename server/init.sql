@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS messages (
     type VARCHAR(32) NOT NULL DEFAULT 'text',
     content TEXT,
     checkin_data JSONB,
+    is_read BOOLEAN DEFAULT false,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -88,3 +89,4 @@ CREATE INDEX IF NOT EXISTS idx_tg_auth_code ON telegram_auth_sessions(auth_code)
 CREATE INDEX IF NOT EXISTS idx_partner_reactions_to_user ON partner_reactions(to_user_id);
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_messages_to_user ON messages(to_user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_messages_unread ON messages(to_user_id, is_read);

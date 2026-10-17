@@ -33,6 +33,7 @@ import {
   sendPartnerPingApi,
   sendPartnerReactionApi,
   syncCheckinsBatchApi,
+  markConversationAsReadApi,
 } from '../services/api';
 import { getCheckIns } from '../storage/checkInStorage';
 import {
@@ -106,6 +107,7 @@ interface AuthContextType {
   sendCarePing: (partnerId?: string) => Promise<{ success: boolean; message: string }>;
   sendCareReaction: (partnerId: string, reactionType: string, reactionLabel: string) => Promise<{ success: boolean; message: string }>;
   broadcastCheckinToChat: (record: CheckInRecord) => void;
+  totalUnreadCount: number;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -115,6 +117,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [token, setToken] = useState<string | null>(null);
   const [partners, setPartners] = useState<PartnerProfile[]>([]);
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
+  const [totalUnreadCount, setTotalUnreadCount] = useState<number>(0);
   const [partnerFeed, setPartnerFeed] = useState<CloudCheckin[]>([]);
   const [incomingReactions, setIncomingReactions] = useState<PartnerReaction[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -235,8 +238,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const fetchConversations = async () => {
     if (!token) return;
     try {
-      const convs = await fetchConversationsApi();
-      setConversations(convs);
+      const res = await fetchConversationsApi();
+      setConversations(res.conversations);
+      setTotalUnreadCount(res.totalUnreadCount);
     } catch (e) {
       console.warn('[AUTH] Could not fetch conversations:', e);
     }
@@ -246,10 +250,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (!token) return;
     try {
       const pid = partnerId || partners[0]?.id;
+      if (!pid) return;
       const res = await fetchMessagesApi(pid);
       if (res && res.messages) {
         setChatMessages(res.messages);
       }
+      // Zero out unread count for this partner and recalculate total immediately
+      setConversations((prev) => {
+        const next = prev.map((c) => (c.partner.id === pid ? { ...c, unreadCount: 0 } : c));
+        setTotalUnreadCount(next.reduce((sum, c) => sum + (c.unreadCount || 0), 0));
+        return next;
+      });
+      markConversationAsReadApi(pid).catch(() => {});
     } catch (e) {
       console.warn('[AUTH] Could not fetch chat messages:', e);
     }
@@ -637,6 +649,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         sendCarePing,
         sendCareReaction,
         broadcastCheckinToChat,
+        totalUnreadCount,
       }}
     >
       {children}

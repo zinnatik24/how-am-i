@@ -1244,6 +1244,15 @@ app.get('/api/conversations', authMiddleware, async (req, res) => {
         [friend.id]
       );
 
+      // Count unread messages sent to current user in this conversation
+      const unreadRes = await query(
+        `SELECT COUNT(*)::int as unread_count
+         FROM messages
+         WHERE conversation_id = $1 AND to_user_id = $2 AND is_read = false`,
+        [convId, req.user.userId]
+      );
+      const unreadCount = unreadRes.rows[0]?.unread_count || 0;
+
       conversations.push({
         partner: {
           id: friend.id,
@@ -1257,6 +1266,7 @@ app.get('/api/conversations', authMiddleware, async (req, res) => {
         conversationId: convId,
         lastMessage: lastMsgRes.rows[0] || null,
         latestCheckin: latestCheckinRes.rows[0] || null,
+        unreadCount,
       });
     }
 
@@ -1267,9 +1277,32 @@ app.get('/api/conversations', authMiddleware, async (req, res) => {
       return timeB - timeA;
     });
 
-    res.json({ conversations });
+    const totalUnreadCount = conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
+
+    res.json({ conversations, totalUnreadCount });
   } catch (err) {
     console.error('[CONVERSATIONS GET] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 15. Mark conversation as read
+app.post('/api/messages/read', authMiddleware, async (req, res) => {
+  try {
+    const { partnerId } = req.body;
+    if (!partnerId) {
+      return res.status(400).json({ error: 'partnerId is required' });
+    }
+    const convId = [req.user.userId, partnerId].sort().join('_');
+    await query(
+      `UPDATE messages
+       SET is_read = true
+       WHERE conversation_id = $1 AND to_user_id = $2 AND is_read = false`,
+      [convId, req.user.userId]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[MESSAGES READ] Error:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -1328,9 +1361,11 @@ async function start() {
             created_at TIMESTAMPTZ DEFAULT NOW(),
             expires_at TIMESTAMPTZ DEFAULT NOW() + INTERVAL '15 minutes'
         );
+        ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT false;
+        CREATE INDEX IF NOT EXISTS idx_messages_unread ON messages(to_user_id, is_read);
         CREATE INDEX IF NOT EXISTS idx_tg_auth_code ON telegram_auth_sessions(auth_code);
       `);
-      console.log('✅ [DB] Schema migrations applied (telegram_id, telegram_username, apple_id, telegram_auth_sessions)');
+      console.log('✅ [DB] Schema migrations applied (telegram_id, telegram_username, apple_id, is_read, telegram_auth_sessions)');
     } catch (migErr) {
       console.warn('[DB] Migration note:', migErr.message);
     }

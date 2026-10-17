@@ -606,6 +606,8 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
           };
         });
 
+  const totalUnreadSum = conversationList.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
+
   // Partner's latest check-in for the active chat room
   const activePartnerCheckin = selectedPartner
     ? conversationList.find((c) => c.partner.id === selectedPartner.id)?.latestCheckin ||
@@ -887,7 +889,14 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
           {/* Section Heading */}
           <View style={styles.chatsSectionHeaderRow}>
             <Text style={styles.chatsSectionHeading}>ВАШИ ЧАТЫ</Text>
-            <Text style={styles.chatsCountBadge}>{conversationList.length}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              {totalUnreadSum > 0 && (
+                <View style={styles.chatsUnreadPill}>
+                  <Text style={styles.chatsUnreadPillText}>+{totalUnreadSum} новых</Text>
+                </View>
+              )}
+              <Text style={styles.chatsCountBadge}>{conversationList.length}</Text>
+            </View>
           </View>
 
           {/* Chats / Partners List Items (Telegram/WhatsApp style) */}
@@ -897,6 +906,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
               const checkin = conv.latestCheckin;
               const quadColor = getQuadrantColor(checkin?.quadrant);
               const quadEmoji = getQuadrantEmoji(checkin?.quadrant);
+              const hasUnread = Boolean(conv.unreadCount && conv.unreadCount > 0);
 
               // Snippet for last message
               let lastMsgSnippet = 'Нажмите, чтобы открыть чат';
@@ -941,7 +951,10 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
               return (
                 <TouchableOpacity
                   key={partner.id}
-                  style={styles.chatRowItem}
+                  style={[
+                    styles.chatRowItem,
+                    hasUnread ? styles.chatRowItemUnread : null,
+                  ]}
                   onPress={() => handleOpenChat(partner)}
                   activeOpacity={0.7}
                 >
@@ -958,17 +971,21 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
                       </Text>
                     </View>
                     {isPartnerOnline(partner) && <View style={styles.chatRowOnlineDot} />}
+                    {hasUnread && <View style={styles.chatRowAvatarUnreadDot} />}
                   </View>
 
                   {/* Middle: Partner Name, Mood Capsule, Last Message */}
                   <View style={styles.chatRowContent}>
                     <View style={styles.chatRowTopRow}>
-                      <Text style={styles.chatRowPartnerName} numberOfLines={1}>
+                      <Text
+                        style={[
+                          styles.chatRowPartnerName,
+                          hasUnread ? styles.chatRowPartnerNameUnread : null,
+                        ]}
+                        numberOfLines={1}
+                      >
                         {partner.name}
                       </Text>
-                      {lastMsgTime ? (
-                        <Text style={styles.chatRowTime}>{lastMsgTime}</Text>
-                      ) : null}
                     </View>
 
                     {/* Mood capsule pill */}
@@ -999,14 +1016,39 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
                     </View>
 
                     {/* Last Message Snippet */}
-                    <Text style={styles.chatRowLastMsg} numberOfLines={1}>
+                    <Text
+                      style={[
+                        styles.chatRowLastMsg,
+                        hasUnread ? styles.chatRowLastMsgUnread : null,
+                      ]}
+                      numberOfLines={1}
+                    >
                       {lastMsgSnippet}
                     </Text>
                   </View>
 
-                  {/* Right Chevron */}
-                  <View style={styles.chatRowChevronBox}>
-                    <Ionicons name="chevron-forward" size={18} color="#718096" />
+                  {/* Right Column: Time & Unread Badge & Chevron */}
+                  <View style={styles.chatRowRightColumn}>
+                    {lastMsgTime ? (
+                      <Text
+                        style={[
+                          styles.chatRowTime,
+                          hasUnread ? styles.chatRowTimeUnread : null,
+                        ]}
+                      >
+                        {lastMsgTime}
+                      </Text>
+                    ) : null}
+                    <View style={styles.chatRowActionRow}>
+                      {hasUnread && (
+                        <View style={styles.chatRowUnreadBadge}>
+                          <Text style={styles.chatRowUnreadBadgeText}>
+                            {conv.unreadCount! > 99 ? '99+' : conv.unreadCount}
+                          </Text>
+                        </View>
+                      )}
+                      <Ionicons name="chevron-forward" size={16} color={hasUnread ? '#4FD1C5' : '#718096'} />
+                    </View>
                   </View>
                 </TouchableOpacity>
               );
@@ -1108,7 +1150,13 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
 
               <TouchableOpacity
                 style={styles.chatHeaderIconBtn}
-                onPress={() => setIsInfoModalOpen(true)}
+                onPress={() => {
+                  triggerHaptic('light');
+                  Alert.alert(
+                    selectedPartner.name,
+                    `${selectedPartner.email ? `Почта: ${selectedPartner.email}\n` : ''}Статус: ${isPartnerOnline(selectedPartner) ? '🟢 В сети' : 'Был(а) недавно'}`
+                  );
+                }}
               >
                 <Ionicons name="ellipsis-horizontal" size={18} color="#A0AEC0" />
               </TouchableOpacity>
@@ -2514,6 +2562,17 @@ const styles = StyleSheet.create({
     paddingVertical: 1,
     borderRadius: 8,
   },
+  chatsUnreadPill: {
+    backgroundColor: '#FF5252',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  chatsUnreadPillText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+  },
 
   // Chat Row Items
   chatsItemsContainer: {
@@ -2528,6 +2587,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.06)',
     gap: 12,
+  },
+  chatRowItemUnread: {
+    borderColor: 'rgba(255, 82, 82, 0.45)',
+    backgroundColor: '#161B26',
   },
   chatRowAvatarBox: {
     position: 'relative',
@@ -2557,6 +2620,17 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#12161F',
   },
+  chatRowAvatarUnreadDot: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#FF5252',
+    borderWidth: 2,
+    borderColor: '#12161F',
+  },
   chatRowContent: {
     flex: 1,
     gap: 3,
@@ -2572,10 +2646,18 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: -0.2,
   },
+  chatRowPartnerNameUnread: {
+    fontWeight: '900',
+    color: '#FFFFFF',
+  },
   chatRowTime: {
     color: '#718096',
     fontSize: 11,
     fontWeight: '500',
+  },
+  chatRowTimeUnread: {
+    color: '#FF5252',
+    fontWeight: '700',
   },
   chatRowMoodPillRow: {
     flexDirection: 'row',
@@ -2608,8 +2690,39 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 17,
   },
-  chatRowChevronBox: {
-    paddingLeft: 4,
+  chatRowLastMsgUnread: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  chatRowRightColumn: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    gap: 6,
+    minWidth: 44,
+  },
+  chatRowActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  chatRowUnreadBadge: {
+    backgroundColor: '#FF5252',
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 5,
+    shadowColor: '#FF5252',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  chatRowUnreadBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
   },
 
   // ============================================
