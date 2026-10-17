@@ -715,7 +715,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({ latestCheckIn, onO
               <View style={{ flex: 1 }}>
                 <Text style={styles.friendsAccountName} numberOfLines={1}>{user?.name}</Text>
                 <Text style={styles.friendsAccountSub} numberOfLines={1}>
-                  {user?.email || (user?.name ? `@${user.name}` : '')}
+                  {user?.telegramUsername ? `@${user.telegramUsername}` : (user?.email && !user.email.endsWith('@telegram.user') ? user.email : (user?.name ? `@${user.name}` : ''))}
                 </Text>
               </View>
             </View>

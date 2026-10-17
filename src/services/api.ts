@@ -16,6 +16,10 @@ export interface UserProfile {
   avatarUrl?: string | null;
   inviteCode: string;
   pushToken?: string | null;
+  appleId?: string | null;
+  telegramId?: string | null;
+  telegramUsername?: string | null;
+  googleId?: string | null;
 }
 
 export interface PartnerProfile {
@@ -139,6 +143,7 @@ export async function loginWithTelegramApi(params: {
   lastName?: string;
   photoUrl?: string;
   name?: string;
+  inviteCode?: string;
 }): Promise<{ token: string; user: UserProfile }> {
   const data = await apiFetch<{ token: string; user: UserProfile }>('/api/auth/telegram', {
     method: 'POST',
@@ -182,6 +187,7 @@ export async function loginWithAppleApi(params: {
   email?: string;
   fullName?: string;
   identityToken?: string;
+  inviteCode?: string;
 }): Promise<{ token: string; user: UserProfile }> {
   const data = await apiFetch<{ token: string; user: UserProfile }>('/api/auth/apple', {
     method: 'POST',

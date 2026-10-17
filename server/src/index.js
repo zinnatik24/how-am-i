@@ -6,11 +6,26 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { pool, query, waitForDb } from './db.js';
-import { signUserToken, authMiddleware, generateInviteCode } from './auth.js';
+import { signUserToken, authMiddleware, generateInviteCode, getOptionalUserId, decodeAppleIdentityToken } from './auth.js';
 import { sendExpoPushNotification } from './push.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+function formatUserResponse(user) {
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    avatarUrl: user.avatar_url,
+    inviteCode: user.invite_code,
+    appleId: user.apple_id || null,
+    telegramId: user.telegram_id || null,
+    telegramUsername: user.telegram_username || null,
+    googleId: user.google_id || null,
+    pushToken: user.push_token || null,
+  };
+}
 
 app.use(cors());
 app.use(express.json());
@@ -115,13 +130,7 @@ app.post('/api/auth/google', async (req, res) => {
     const token = signUserToken(user);
     res.json({
       token,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        avatarUrl: user.avatar_url,
-        inviteCode: user.invite_code,
-      },
+      user: formatUserResponse(user),
     });
   } catch (err) {
     console.error('[AUTH] Google auth error:', err);
@@ -176,13 +185,7 @@ app.get('/api/auth/telegram/session/status', async (req, res) => {
         return res.json({
           completed: true,
           token,
-          user: {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-            avatarUrl: user.avatar_url,
-            inviteCode: user.invite_code,
-          },
+          user: formatUserResponse(user),
         });
       }
     }
@@ -209,31 +212,51 @@ app.post('/api/auth/telegram/webhook', async (req, res) => {
     if (text.startsWith('/start auth_')) {
       const authCode = text.replace('/start auth_', '').trim();
       const tgId = String(from.id);
-      const tgUsername = from.username ? `@${from.username}` : '';
-      const displayName = [from.first_name, from.last_name].filter(Boolean).join(' ') || tgUsername || 'Пользователь';
+      const tgUsername = from.username ? from.username.replace(/^@/, '').trim().toLowerCase() : null;
+      const displayName = [from.first_name, from.last_name].filter(Boolean).join(' ') || (tgUsername ? `@${tgUsername}` : 'Пользователь');
       const tgEmail = `tg_${tgId}@telegram.user`;
+      const tgEmailByName = tgUsername ? `tg_${tgUsername}@telegram.user` : null;
+      const googleIdTg = `tg:${tgId}`;
+      const googleIdName = tgUsername ? `tg:${tgUsername}` : null;
 
-      // Find or create internal user (user.id is always internal UUID)
+      // Find or unify existing user across all telegram identifiers
       let userRes = await query(
-        'SELECT * FROM users WHERE telegram_id = $1 OR email = $2 OR google_id = $3',
-        [tgId, tgEmail, `tg:${tgId}`]
+        `SELECT * FROM users 
+         WHERE telegram_id = $1 
+            OR ($2::varchar IS NOT NULL AND LOWER(telegram_username) = $2)
+            OR email = $3 
+            OR ($4::varchar IS NOT NULL AND email = $4)
+            OR google_id = $5 
+            OR ($6::varchar IS NOT NULL AND google_id = $6)
+         LIMIT 1`,
+        [tgId, tgUsername, tgEmail, tgEmailByName, googleIdTg, googleIdName]
       );
       let user;
       if (userRes.rows.length === 0) {
         const inviteCode = generateInviteCode(6);
         const insertRes = await query(
-          `INSERT INTO users (telegram_id, email, name, invite_code)
-           VALUES ($1, $2, $3, $4)
+          `INSERT INTO users (telegram_id, telegram_username, email, google_id, name, invite_code) 
+           VALUES ($1, $2, $3, $4, $5, $6) 
            RETURNING *`,
-          [tgId, tgEmail, displayName, inviteCode]
+          [tgId, tgUsername, tgEmail, googleIdTg, displayName, inviteCode]
         );
         user = insertRes.rows[0];
+        console.log(`[AUTH] New Telegram user created via Bot: ${user.name} (${user.email}), code: ${user.invite_code}`);
       } else {
         user = userRes.rows[0];
-        await query(
-          'UPDATE users SET telegram_id = $1, name = COALESCE(name, $2), updated_at = NOW() WHERE id = $3',
-          [tgId, displayName, user.id]
+        const updateRes = await query(
+          `UPDATE users 
+           SET telegram_id = $1, 
+               telegram_username = COALESCE(telegram_username, $2), 
+               google_id = COALESCE(google_id, $3),
+               name = CASE WHEN (name IS NULL OR name LIKE '@%' OR name = 'Пользователь') AND $4::varchar IS NOT NULL THEN $4 ELSE name END, 
+               updated_at = NOW() 
+           WHERE id = $5 
+           RETURNING *`,
+          [tgId, tgUsername, googleIdTg, displayName, user.id]
         );
+        user = updateRes.rows[0];
+        console.log(`[AUTH] Telegram account unified with user: ${user.name} (id: ${user.id}, tgId: ${tgId}, @${tgUsername})`);
       }
 
       // Complete session
@@ -266,60 +289,109 @@ app.post('/api/auth/telegram/webhook', async (req, res) => {
 // Telegram auth / direct registration fallback
 app.post('/api/auth/telegram', async (req, res) => {
   try {
-    const { telegramId, username, firstName, lastName, photoUrl, name } = req.body;
-    const rawId = telegramId || username;
-    if (!rawId) {
+    const { telegramId, username, firstName, lastName, photoUrl, name, inviteCode } = req.body;
+    const currentUserId = getOptionalUserId(req);
+
+    const rawInput = telegramId || username;
+    if (!rawInput && !currentUserId) {
       return res.status(400).json({ error: 'Укажите telegramId или username' });
     }
 
-    const cleanUsername = username ? username.replace(/^@/, '').trim() : '';
-    const cleanId = String(rawId).replace(/^@/, '').trim();
-    const googleId = `tg:${cleanId.toLowerCase()}`;
-    const tgId = /^\d+$/.test(cleanId) ? cleanId : null;
-    const email = `tg_${cleanId.toLowerCase()}@telegram.user`;
-    const displayName = name || [firstName, lastName].filter(Boolean).join(' ') || (cleanUsername ? `@${cleanUsername}` : cleanId);
+    let cleanTgId = null;
+    let cleanUsername = null;
+
+    if (telegramId && /^\d+$/.test(String(telegramId).trim())) {
+      cleanTgId = String(telegramId).trim();
+    }
+    if (username) {
+      cleanUsername = String(username).replace(/^@/, '').trim().toLowerCase();
+    }
+    if (!cleanTgId && !cleanUsername && rawInput) {
+      const rawStr = String(rawInput).trim();
+      if (/^\d+$/.test(rawStr)) {
+        cleanTgId = rawStr;
+      } else {
+        cleanUsername = rawStr.replace(/^@/, '').trim().toLowerCase();
+      }
+    }
+
+    const tgEmailById = cleanTgId ? `tg_${cleanTgId}@telegram.user` : null;
+    const tgEmailByName = cleanUsername ? `tg_${cleanUsername}@telegram.user` : null;
+    const googleIdById = cleanTgId ? `tg:${cleanTgId}` : null;
+    const googleIdByName = cleanUsername ? `tg:${cleanUsername}` : null;
+    const displayName = name || [firstName, lastName].filter(Boolean).join(' ') || (cleanUsername ? `@${cleanUsername}` : (cleanTgId ? `Пользователь ${cleanTgId}` : 'Пользователь Telegram'));
     const avatarUrl = photoUrl || null;
+    const cleanInvite = inviteCode ? String(inviteCode).trim().toUpperCase() : null;
 
-    // Check if user exists by telegram_id, google_id or email
-    let userRes = await query('SELECT * FROM users WHERE telegram_id = $1 OR google_id = $2 OR email = $3', [cleanId, googleId, email]);
+    // 1. If currently logged in user is linking their Telegram account
+    if (currentUserId) {
+      const curRes = await query('SELECT * FROM users WHERE id = $1', [currentUserId]);
+      if (curRes.rows.length > 0) {
+        const updateRes = await query(
+          `UPDATE users 
+           SET telegram_id = COALESCE($1, telegram_id),
+               telegram_username = COALESCE($2, telegram_username),
+               name = CASE WHEN (name IS NULL OR name LIKE '@%' OR name = 'Пользователь') AND $3::varchar IS NOT NULL THEN $3 ELSE name END,
+               avatar_url = COALESCE(avatar_url, $4),
+               updated_at = NOW()
+           WHERE id = $5
+           RETURNING *`,
+          [cleanTgId, cleanUsername, displayName, avatarUrl, currentUserId]
+        );
+        const user = updateRes.rows[0];
+        const token = signUserToken(user);
+        return res.json({ token, user: formatUserResponse(user) });
+      }
+    }
+
+    // 2. Search for existing user across all telegram identifiers, emails, and invite codes
+    let userRes = await query(
+      `SELECT * FROM users 
+       WHERE ($1::varchar IS NOT NULL AND telegram_id = $1)
+          OR ($2::varchar IS NOT NULL AND LOWER(telegram_username) = $2)
+          OR ($3::varchar IS NOT NULL AND email = $3)
+          OR ($4::varchar IS NOT NULL AND email = $4)
+          OR ($5::varchar IS NOT NULL AND google_id = $5)
+          OR ($6::varchar IS NOT NULL AND google_id = $6)
+          OR ($7::varchar IS NOT NULL AND invite_code = $7)
+       LIMIT 1`,
+      [cleanTgId, cleanUsername, tgEmailById, tgEmailByName, googleIdById, googleIdByName, cleanInvite]
+    );
     let user;
-
     if (userRes.rows.length === 0) {
-      const inviteCode = generateInviteCode(6);
+      const newInviteCode = generateInviteCode(6);
+      const email = tgEmailById || tgEmailByName || `tg_${Date.now()}@telegram.user`;
+      const googleId = googleIdById || googleIdByName;
       const insertRes = await query(
-        `INSERT INTO users (telegram_id, google_id, email, name, avatar_url, invite_code)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        `INSERT INTO users (telegram_id, telegram_username, google_id, email, name, avatar_url, invite_code) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7) 
          RETURNING *`,
-        [tgId || cleanId, googleId, email, displayName, avatarUrl, inviteCode]
+        [cleanTgId, cleanUsername, googleId, email, displayName, avatarUrl, newInviteCode]
       );
       user = insertRes.rows[0];
       console.log(`[AUTH] New Telegram user created: ${user.name} (${user.email}), code: ${user.invite_code}`);
     } else {
       user = userRes.rows[0];
       const updateRes = await query(
-        `UPDATE users
+        `UPDATE users 
          SET telegram_id = COALESCE($1, telegram_id),
-             google_id = COALESCE($2, google_id),
-             name = COALESCE($3, name),
-             avatar_url = COALESCE($4, avatar_url),
-             updated_at = NOW()
-         WHERE id = $5
+             telegram_username = COALESCE($2, telegram_username),
+             google_id = COALESCE(google_id, $3, $4),
+             name = CASE WHEN (name IS NULL OR name LIKE '@%' OR name = 'Пользователь') AND $5::varchar IS NOT NULL THEN $5 ELSE name END,
+             avatar_url = COALESCE(avatar_url, $6),
+             updated_at = NOW() 
+         WHERE id = $7 
          RETURNING *`,
-        [tgId || cleanId, googleId, displayName, avatarUrl, user.id]
+        [cleanTgId, cleanUsername, googleIdById, googleIdByName, displayName, avatarUrl, user.id]
       );
       user = updateRes.rows[0];
+      console.log(`[AUTH] Telegram user identified & linked: ${user.name} (id: ${user.id}, tgId: ${user.telegram_id}, @${user.telegram_username})`);
     }
 
     const token = signUserToken(user);
     res.json({
       token,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        avatarUrl: user.avatar_url,
-        inviteCode: user.invite_code,
-      },
+      user: formatUserResponse(user),
     });
   } catch (err) {
     console.error('[AUTH] Telegram auth error:', err);
@@ -330,58 +402,84 @@ app.post('/api/auth/telegram', async (req, res) => {
 // Apple Sign In (App Store Guideline 4.8 compliant)
 app.post('/api/auth/apple', async (req, res) => {
   try {
-    const { appleId, email, fullName, identityToken } = req.body;
-    if (!appleId && !email && !identityToken) {
+    const { appleId, email, fullName, identityToken, inviteCode } = req.body;
+    const currentUserId = getOptionalUserId(req);
+
+    // Decode Apple JWT identityToken if present to extract immutable sub and email
+    const decodedApple = decodeAppleIdentityToken(identityToken);
+    const resolvedAppleId = (appleId ? String(appleId).trim() : null) || decodedApple.appleId;
+    const resolvedEmail = (email ? email.trim().toLowerCase() : null) || decodedApple.email;
+
+    if (!resolvedAppleId && !resolvedEmail && !currentUserId) {
       return res.status(400).json({ error: 'Требуется appleId, email или identityToken' });
     }
 
-    const cleanEmail = email ? email.trim().toLowerCase() : null;
-    const cleanAppleId = appleId ? String(appleId).trim() : (identityToken ? `apple_${crypto.createHash('sha256').update(identityToken).digest('hex').slice(0, 16)}` : null);
-    const userEmail = cleanEmail || (cleanAppleId ? `apple_${cleanAppleId.slice(-8)}@privaterelay.appleid.com` : null);
+    const cleanAppleId = resolvedAppleId || null;
+    const cleanEmail = resolvedEmail || null;
+    const userEmail = cleanEmail || (cleanAppleId ? `apple_${cleanAppleId.slice(-12)}@privaterelay.appleid.com` : null);
     const displayName = fullName || (cleanEmail ? cleanEmail.split('@')[0] : 'Пользователь Apple');
+    const cleanInvite = inviteCode ? String(inviteCode).trim().toUpperCase() : null;
 
-    // Find existing user by apple_id OR email (crucial for account linking!)
+    // 1. If currently logged in user is linking their Apple account
+    if (currentUserId) {
+      const curRes = await query('SELECT * FROM users WHERE id = $1', [currentUserId]);
+      if (curRes.rows.length > 0) {
+        const updateRes = await query(
+          `UPDATE users 
+           SET apple_id = COALESCE($1, apple_id),
+               email = COALESCE(email, $2),
+               name = CASE WHEN (name IS NULL OR name = 'Пользователь Apple') AND $3::varchar IS NOT NULL THEN $3 ELSE name END,
+               updated_at = NOW()
+           WHERE id = $4
+           RETURNING *`,
+          [cleanAppleId, userEmail, displayName, currentUserId]
+        );
+        const user = updateRes.rows[0];
+        const token = signUserToken(user);
+        return res.json({ token, user: formatUserResponse(user) });
+      }
+    }
+
+    // 2. Find existing user by apple_id, email, or invite_code (crucial for account linking!)
     let userRes = await query(
-      `SELECT * FROM users WHERE (apple_id IS NOT NULL AND apple_id = $1) OR (email IS NOT NULL AND email = $2)`,
-      [cleanAppleId, userEmail]
+      `SELECT * FROM users 
+       WHERE ($1::varchar IS NOT NULL AND apple_id = $1)
+          OR ($2::varchar IS NOT NULL AND email = $2)
+          OR ($3::varchar IS NOT NULL AND invite_code = $3)
+       LIMIT 1`,
+      [cleanAppleId, userEmail, cleanInvite]
     );
     let user;
-
     if (userRes.rows.length === 0) {
-      const inviteCode = generateInviteCode(6);
+      const newInviteCode = generateInviteCode(6);
       const insertRes = await query(
-        `INSERT INTO users (apple_id, email, name, invite_code)
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO users (apple_id, email, name, invite_code) 
+         VALUES ($1, $2, $3, $4) 
          RETURNING *`,
-        [cleanAppleId, userEmail, displayName, inviteCode]
+        [cleanAppleId, userEmail, displayName, newInviteCode]
       );
       user = insertRes.rows[0];
       console.log(`[AUTH] New Apple user created: ${user.name} (${user.email}), code: ${user.invite_code}`);
     } else {
       user = userRes.rows[0];
       const updateRes = await query(
-        `UPDATE users
+        `UPDATE users 
          SET apple_id = COALESCE(apple_id, $1),
-             name = COALESCE(name, $2),
-             updated_at = NOW()
-         WHERE id = $3
+             email = COALESCE(email, $2),
+             name = CASE WHEN (name IS NULL OR name = 'Пользователь Apple') AND $3::varchar IS NOT NULL THEN $3 ELSE name END,
+             updated_at = NOW() 
+         WHERE id = $4 
          RETURNING *`,
-        [cleanAppleId, displayName, user.id]
+        [cleanAppleId, userEmail, displayName, user.id]
       );
       user = updateRes.rows[0];
-      console.log(`[AUTH] Apple account linked to user: ${user.name} (${user.email})`);
+      console.log(`[AUTH] Apple account linked to user: ${user.name} (${user.email}), apple_id: ${user.apple_id}`);
     }
 
     const token = signUserToken(user);
     res.json({
       token,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        avatarUrl: user.avatar_url,
-        inviteCode: user.invite_code,
-      },
+      user: formatUserResponse(user),
     });
   } catch (err) {
     console.error('[AUTH] Apple auth error:', err);
@@ -461,14 +559,7 @@ app.get('/api/auth/me', authMiddleware, async (req, res) => {
     );
 
     res.json({
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        avatarUrl: user.avatar_url,
-        inviteCode: user.invite_code,
-        pushToken: user.push_token,
-      },
+      user: formatUserResponse(user),
       partners: partnersRes.rows.map((p) => ({
         id: p.id,
         name: p.name,
@@ -1220,9 +1311,12 @@ async function start() {
     try {
       await query(`
         ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_id VARCHAR(255);
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_username VARCHAR(255);
         ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_id VARCHAR(255);
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_users_telegram_id ON users(telegram_id) WHERE telegram_id IS NOT NULL;
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_users_apple_id ON users(apple_id) WHERE apple_id IS NOT NULL;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ;
+        CREATE INDEX IF NOT EXISTS idx_users_telegram_id ON users(telegram_id);
+        CREATE INDEX IF NOT EXISTS idx_users_telegram_username ON users(LOWER(telegram_username));
+        CREATE INDEX IF NOT EXISTS idx_users_apple_id ON users(apple_id);
 
         CREATE TABLE IF NOT EXISTS telegram_auth_sessions (
             id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -1236,7 +1330,7 @@ async function start() {
         );
         CREATE INDEX IF NOT EXISTS idx_tg_auth_code ON telegram_auth_sessions(auth_code);
       `);
-      console.log('✅ [DB] Schema migrations applied (telegram_id, apple_id, telegram_auth_sessions)');
+      console.log('✅ [DB] Schema migrations applied (telegram_id, telegram_username, apple_id, telegram_auth_sessions)');
     } catch (migErr) {
       console.warn('[DB] Migration note:', migErr.message);
     }

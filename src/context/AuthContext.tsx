@@ -81,12 +81,14 @@ interface AuthContextType {
     lastName?: string;
     photoUrl?: string;
     name?: string;
+    inviteCode?: string;
   }) => Promise<void>;
   signInWithApple: (params?: {
     appleId?: string;
     email?: string;
     fullName?: string;
     identityToken?: string;
+    inviteCode?: string;
   }) => Promise<void>;
   applyAuthSession: (authData: { token: string; user: UserProfile }) => Promise<void>;
   signInDemo: (name: string, email: string) => Promise<void>;
@@ -338,23 +340,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     lastName?: string;
     photoUrl?: string;
     name?: string;
+    inviteCode?: string;
   }) => {
     setIsLoading(true);
     try {
       const res = await loginWithTelegramApi(params);
-      setToken(res.token);
-      setUser(res.user);
-      const fresh = await fetchMe();
-      setPartners(fresh.partners || []);
-      // Migrate guest session checkins to profile
-      try {
-        const guestRecords = await getCheckIns();
-        if (guestRecords.length > 0) {
-          await syncCheckinsBatchApi(guestRecords);
-        }
-      } catch (e) {
-        console.warn('[AUTH] Could not sync guest records:', e);
-      }
+      await applyAuthSession(res);
       Alert.alert('Успешный вход через Telegram!', `Добро пожаловать, ${res.user.name}!`);
     } catch (err: any) {
       Alert.alert('Ошибка Telegram входа', err.message || 'Сервер недоступен');
@@ -385,6 +376,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     email?: string;
     fullName?: string;
     identityToken?: string;
+    inviteCode?: string;
   }) => {
     setIsLoading(true);
     try {

@@ -504,9 +504,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onCheckInsUpdate
                 <View style={styles.authBadgePill}>
                   <Ionicons
                     name={
-                      user.email?.includes('apple')
+                      Boolean(user.appleId || user.email?.includes('apple'))
                         ? 'logo-apple'
-                        : user.email?.includes('telegram') || (user as any).google_id?.startsWith('tg:')
+                        : Boolean(user.telegramId || user.telegramUsername || user.email?.includes('telegram') || (user as any).google_id?.startsWith('tg:'))
                         ? 'paper-plane'
                         : 'logo-google'
                     }
@@ -514,10 +514,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onCheckInsUpdate
                     color="#4FD1C5"
                   />
                   <Text style={styles.authBadgeText}>
-                    {user.email?.includes('apple')
+                    {Boolean(user.appleId || user.email?.includes('apple'))
                       ? 'Apple ID'
-                      : user.email?.includes('telegram') || (user as any).google_id?.startsWith('tg:')
-                      ? 'Telegram'
+                      : Boolean(user.telegramId || user.telegramUsername || user.email?.includes('telegram') || (user as any).google_id?.startsWith('tg:'))
+                      ? (user.telegramUsername ? `@${user.telegramUsername}` : 'Telegram')
                       : 'Google Account'}
                   </Text>
                 </View>

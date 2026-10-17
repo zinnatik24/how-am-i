@@ -4,13 +4,28 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     google_id VARCHAR(255) UNIQUE,
+    telegram_id VARCHAR(255),
+    telegram_username VARCHAR(255),
+    apple_id VARCHAR(255),
     email VARCHAR(255) UNIQUE NOT NULL,
     name VARCHAR(255),
     avatar_url TEXT,
     invite_code VARCHAR(16) UNIQUE NOT NULL,
     push_token TEXT,
+    last_seen_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS telegram_auth_sessions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    auth_code VARCHAR(64) UNIQUE NOT NULL,
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    telegram_id VARCHAR(64),
+    telegram_user JSONB,
+    status VARCHAR(32) DEFAULT 'pending',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    expires_at TIMESTAMPTZ DEFAULT NOW() + INTERVAL '15 minutes'
 );
 
 CREATE TABLE IF NOT EXISTS friendships (
@@ -66,6 +81,10 @@ CREATE INDEX IF NOT EXISTS idx_checkins_created_at ON checkins(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_friendships_user_id ON friendships(user_id);
 CREATE INDEX IF NOT EXISTS idx_friendships_friend_id ON friendships(friend_id);
 CREATE INDEX IF NOT EXISTS idx_users_invite_code ON users(invite_code);
+CREATE INDEX IF NOT EXISTS idx_users_telegram_id ON users(telegram_id);
+CREATE INDEX IF NOT EXISTS idx_users_telegram_username ON users(LOWER(telegram_username));
+CREATE INDEX IF NOT EXISTS idx_users_apple_id ON users(apple_id);
+CREATE INDEX IF NOT EXISTS idx_tg_auth_code ON telegram_auth_sessions(auth_code);
 CREATE INDEX IF NOT EXISTS idx_partner_reactions_to_user ON partner_reactions(to_user_id);
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_messages_to_user ON messages(to_user_id, created_at DESC);
