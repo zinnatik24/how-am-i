@@ -26,6 +26,7 @@ import { QuadrantCircle } from '../components/QuadrantCircle';
 import { saveCheckIn, getDefaultShareWithPartners } from '../storage/checkInStorage';
 import { saveCheckinToCloud } from '../services/api';
 import { triggerHaptic } from '../utils/haptics';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface CheckInModalProps {
   visible: boolean;
